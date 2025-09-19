@@ -2,9 +2,15 @@ using UnityEngine;
 
 public class Bullet : MonoBehaviour
 {
-    [SerializeField] float lifeTime = 3f;
+    public float lifeTime = 2f; 
 
-    void Start() => Destroy(gameObject, lifeTime);
+    void Start()
+    {
+        Destroy(gameObject, lifeTime);
+    }
 
-    void OnCollisionEnter(Collision _) => Destroy(gameObject);
+    void OnTriggerEnter(Collider other)
+    {
+        Destroy(gameObject);
+    }
 }

@@ -4,12 +4,14 @@ using UnityEngine.InputSystem;
 public class Weapon : MonoBehaviour
 {
     [Header("Refs")]
-    [SerializeField] Transform firePoint;          // empty na ponta da arma
-    [SerializeField] GameObject bulletPrefab;      // prefab do proj�til
-    [SerializeField] Transform cam;                // arrasta o cameraRoot (ou deixa vazio p/ usar Camera.main)
+    [SerializeField] Transform firePoint;
+    [SerializeField] GameObject bulletPrefab;
+    [SerializeField] Transform cam;
+    [SerializeField] ParticleSystem muzzleFlash;   // prefab do efeito visual
+    [SerializeField] AudioSource fireAudio;        // som do disparo
 
     [Header("Input")]
-    [SerializeField] InputActionReference shootAction; // Player/Fire
+    [SerializeField] InputActionReference shootAction;
 
     [Header("Settings")]
     [SerializeField] float bulletSpeed = 40f;
@@ -25,8 +27,15 @@ public class Weapon : MonoBehaviour
         playerCC = GetComponentInParent<CharacterController>();
     }
 
-    void OnEnable() { if (shootAction) shootAction.action.Enable(); }
-    void OnDisable() { if (shootAction) shootAction.action.Disable(); }
+    void OnEnable()
+    {
+        if (shootAction) shootAction.action.Enable();
+    }
+
+    void OnDisable()
+    {
+        if (shootAction) shootAction.action.Disable();
+    }
 
     void Update()
     {
@@ -41,27 +50,32 @@ public class Weapon : MonoBehaviour
     {
         if (!bulletPrefab || !firePoint) return;
 
-        
+        // dire��o do disparo
         Vector3 dir;
         Ray ray = new Ray(cam ? cam.position : firePoint.position, cam ? cam.forward : firePoint.forward);
         if (Physics.Raycast(ray, out var hit, maxAimDistance, ~0, QueryTriggerInteraction.Ignore))
-            dir = (hit.point - firePoint.position).normalized;  
+            dir = (hit.point - firePoint.position).normalized;
         else
             dir = (ray.GetPoint(maxAimDistance) - firePoint.position).normalized;
 
-        
+        // criar bala
         var bullet = Instantiate(bulletPrefab, firePoint.position, Quaternion.LookRotation(dir));
 
-        
         if (bullet.TryGetComponent<Rigidbody>(out var rb))
-            rb.velocity = dir * bulletSpeed;
+            rb.linearVelocity = dir * bulletSpeed;
 
-        
-        bullet.transform.position += dir * 0.03f;
+        // afastar um pouco da arma para n�o colidir logo
+        bullet.transform.position += dir * 0.2f;
 
-        /
-        if (muzzleFlash) muzzleFlash.Play();
-        if (fireAudio) fireAudio.PlayOneShot(fireAudio.clip);
+        // flash
+        if (muzzleFlash)
+        {
+            var flash = Instantiate(muzzleFlash, firePoint.position, firePoint.rotation, firePoint);
+            flash.Play();
+            Destroy(flash.gameObject, 0.2f);
+        }
+
+        // som
+        if (fireAudio && fireAudio.clip) fireAudio.PlayOneShot(fireAudio.clip);
     }
-
 }
