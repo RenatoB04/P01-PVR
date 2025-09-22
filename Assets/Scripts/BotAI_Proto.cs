@@ -48,7 +48,6 @@ public class BotAI_Proto : MonoBehaviour
     }
 
     void DetectPlayer(){
-        // só procura se não tiver target
         if (target) return;
 
         var hits = Physics.OverlapSphere(transform.position, viewRadius, targetMask);
@@ -68,7 +67,6 @@ public class BotAI_Proto : MonoBehaviour
         Vector3 dir = dest - eyes;
         if (Physics.Raycast(eyes, dir.normalized, out var hit, dir.magnitude))
         {
-            // se bateu noutro collider antes do target e esse collider está na obstacleMask, bloqueia
             if (hit.transform != t && ((1 << hit.collider.gameObject.layer) & obstacleMask) != 0) return false;
         }
         return true;

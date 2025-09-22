@@ -6,7 +6,7 @@ public class FP_Controller_IS : MonoBehaviour
 {
     [Header("Refs")] [SerializeField] Transform cameraRoot;
     CharacterController cc;
-    Animator animator; // Referência ao Animator
+    Animator animator;
 
     [Header("Input Actions")] [SerializeField]
     InputActionReference move;
@@ -46,7 +46,7 @@ public class FP_Controller_IS : MonoBehaviour
     void Awake()
     {
         cc = GetComponent<CharacterController>();
-        animator = GetComponentInChildren<Animator>(); // Pega o Animator do modelo
+        animator = GetComponentInChildren<Animator>();
 
         originalHeight = cc.height;
         stepOffsetOriginal = cc.stepOffset;
@@ -126,18 +126,16 @@ void Update()
     velocity.z = horiz.z;
 
     // -------- Atualizar o parâmetro Speed no Animator --------
-    // Verificando a velocidade na direção X e Z
-    float speedPercent = new Vector3(velocity.x, 0f, velocity.z).magnitude / sprintSpeed;  // Normaliza a velocidade de 0 a 1
-
-    // Adicionando uma tolerância para o personagem ficar "realmente parado" quando a velocidade for muito baixa
-    if (speedPercent < 0.05f)  // Se a velocidade for muito baixa, forçamos para 0
+    float speedPercent = new Vector3(velocity.x, 0f, velocity.z).magnitude / sprintSpeed;
+    
+    if (speedPercent < 0.05f)
     {
-        speedPercent = 0f;  // Tolerância para que o personagem fique em Idle
+        speedPercent = 0f;
     }
 
-    speedPercent = Mathf.Clamp(speedPercent, 0f, 1f);  // Limita a velocidade entre 0 e 1
+    speedPercent = Mathf.Clamp(speedPercent, 0f, 1f);
 
-    animator.SetFloat("Speed", speedPercent, 0.1f, Time.deltaTime); // Passa para o Animator
+    animator.SetFloat("Speed", speedPercent, 0.1f, Time.deltaTime);
 
     // -------- Salto --------
     if (canJump && jump.action.WasPressedThisFrame() && !wantsCrouch)

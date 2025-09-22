@@ -41350,7 +41350,7 @@ GameObject:
   - component: {fileID: 1316415540}
   - component: {fileID: 1316415539}
   - component: {fileID: 1316415545}
-  - component: {fileID: 1316415544}
+  - component: {fileID: 1316415546}
   m_Layer: 6
   m_Name: Player
   m_TagString: Untagged
@@ -41478,36 +41478,6 @@ Transform:
   - {fileID: 585405996}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1316415544
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1316415536}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 28d270cf18d90f54e9581f83f3a78123, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::FP_Controller_IS
-  cameraRoot: {fileID: 585405996}
-  move: {fileID: -1680190386980627800, guid: 289c1b55c9541489481df5cc06664110, type: 3}
-  look: {fileID: -5630151704836100654, guid: 289c1b55c9541489481df5cc06664110, type: 3}
-  jump: {fileID: -2099379676528639254, guid: 289c1b55c9541489481df5cc06664110, type: 3}
-  sprint: {fileID: -7471211009204490832, guid: 289c1b55c9541489481df5cc06664110, type: 3}
-  crouch: {fileID: 7040659881675835329, guid: 289c1b55c9541489481df5cc06664110, type: 3}
-  walkSpeed: 3
-  sprintSpeed: 6
-  crouchSpeed: 1.5
-  accelGround: 14
-  accelAir: 6
-  gravity: -28
-  jumpHeight: 1
-  maxFallSpeed: -50
-  sens: 0.5
-  crouchHeight: 1
-  crouchCamYOffset: -0.4
-  crouchSmooth: 12
 --- !u!114 &1316415545
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -41538,6 +41508,36 @@ MonoBehaviour:
   m_DefaultActionMap: Player
   m_SplitScreenIndex: -1
   m_Camera: {fileID: 0}
+--- !u!114 &1316415546
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1316415536}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4da186fdca025264f924352fdb6e6a25, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::BRUNO_Movement
+  cameraRoot: {fileID: 585405996}
+  move: {fileID: -1680190386980627800, guid: 289c1b55c9541489481df5cc06664110, type: 3}
+  look: {fileID: -5630151704836100654, guid: 289c1b55c9541489481df5cc06664110, type: 3}
+  jump: {fileID: -2099379676528639254, guid: 289c1b55c9541489481df5cc06664110, type: 3}
+  sprint: {fileID: -7471211009204490832, guid: 289c1b55c9541489481df5cc06664110, type: 3}
+  crouch: {fileID: 7040659881675835329, guid: 289c1b55c9541489481df5cc06664110, type: 3}
+  walkSpeed: 3
+  sprintSpeed: 6
+  crouchSpeed: 1.5
+  accelGround: 14
+  accelAir: 6
+  gravity: -28
+  jumpHeight: 1
+  maxFallSpeed: -50
+  sens: 0.5
+  crouchHeight: 1
+  crouchCamYOffset: -0.4
+  crouchSmooth: 12
 --- !u!1001 &1319136021
 PrefabInstance:
   m_ObjectHideFlags: 0
