@@ -13,8 +13,8 @@ GameObject:
   - component: {fileID: 6082259677471351110}
   - component: {fileID: 7187590067403352912}
   - component: {fileID: 2773298639649144691}
-  - component: {fileID: 5252193008998355601}
-  m_Layer: 0
+  - component: {fileID: -1708787534474456793}
+  m_Layer: 9
   m_Name: Bullet
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -107,7 +107,7 @@ SphereCollider:
     serializedVersion: 2
     m_Bits: 0
   m_LayerOverridePriority: 0
-  m_IsTrigger: 1
+  m_IsTrigger: 0
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
@@ -140,7 +140,7 @@ Rigidbody:
   m_Interpolate: 1
   m_Constraints: 0
   m_CollisionDetection: 2
---- !u!114 &5252193008998355601
+--- !u!114 &-1708787534474456793
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -151,5 +151,8 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 489570af2d9f25148b42b4f6f5665b12, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::Bullet
-  lifeTime: 3
+  m_EditorClassIdentifier: Assembly-CSharp::BulletProjectile
+  damage: 20
+  lifeTime: 5
+  ownerTeam: -1
+  ownerRoot: {fileID: 0}

@@ -15,7 +15,7 @@ GameObject:
   - component: {fileID: 3353205525096065713}
   - component: {fileID: -6465962347971376533}
   - component: {fileID: 5528176311267628620}
-  m_Layer: 0
+  m_Layer: 8
   m_Name: Bot_Proto
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -152,7 +152,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::BotAI_Proto
   patrolPoints: []
   waypointTolerance: 0.6
-  viewRadius: 15
+  viewRadius: 40
   viewAngle: 180
   targetMask:
     serializedVersion: 2
@@ -174,7 +174,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Health
   maxHealth: 100
-  team: 1
+  team: 2
   currentHealth: 0
   isDead: 0
   OnHealthChanged:
@@ -183,3 +183,4 @@ MonoBehaviour:
   OnDied:
     m_PersistentCalls:
       m_Calls: []
+  healthText: {fileID: 0}

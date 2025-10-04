@@ -53,7 +53,7 @@ public class Weapon : MonoBehaviour
     {
         if (!bulletPrefab || !firePoint) return;
 
-        // dire��o do disparo
+        // direção do disparo (alinha ao ponto que a câmera mira)
         Vector3 dir;
         Ray ray = new Ray(cam ? cam.position : firePoint.position, cam ? cam.forward : firePoint.forward);
         if (Physics.Raycast(ray, out var hit, maxAimDistance, ~0, QueryTriggerInteraction.Ignore))
@@ -64,13 +64,22 @@ public class Weapon : MonoBehaviour
         // criar bala
         var bullet = Instantiate(bulletPrefab, firePoint.position, Quaternion.LookRotation(dir));
 
+        // equipa e root do dono (para FF e evitar auto-dano)
+        if (bullet.TryGetComponent<BulletProjectile>(out var bp))
+        {
+            var h = GetComponentInParent<Health>();
+            if (h) bp.ownerTeam = h.team;          // ex.: 0 para player
+            bp.ownerRoot = h ? h.transform.root : transform.root;
+        }
+
+        // afastar um pouco para não colidir logo com a própria arma
+        bullet.transform.position += dir * 0.2f;
+
+        // aplicar velocidade (usa velocity, não linearVelocity)
         if (bullet.TryGetComponent<Rigidbody>(out var rb))
             rb.linearVelocity = dir * bulletSpeed;
 
-        // afastar um pouco da arma para n�o colidir logo
-        bullet.transform.position += dir * 0.2f;
-
-        // flash
+        // VFX
         if (muzzleFlash)
         {
             var flash = Instantiate(muzzleFlash, firePoint.position, firePoint.rotation, firePoint);
@@ -81,4 +90,5 @@ public class Weapon : MonoBehaviour
         // som
         if (fireAudio && fireAudio.clip) fireAudio.PlayOneShot(fireAudio.clip);
     }
+
 }

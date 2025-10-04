@@ -1,16 +1,30 @@
 using UnityEngine;
 
-public class Bullet : MonoBehaviour
+[RequireComponent(typeof(Rigidbody), typeof(Collider))]
+public class BulletProjectile : MonoBehaviour
 {
-    public float lifeTime = 2f; 
+    public float damage = 20f;
+    public float lifeTime = 5f;
+
+    [HideInInspector] public int ownerTeam = -1;
+    [HideInInspector] public Transform ownerRoot;
 
     void Start()
     {
         Destroy(gameObject, lifeTime);
     }
 
-    void OnTriggerEnter(Collider other)
+    void OnCollisionEnter(Collision c)
     {
+        // evita acertar no emissor (mesmo root)
+        if (ownerRoot && c.transform.root == ownerRoot) return;
+
+        else
+        {
+            var h = c.collider.GetComponentInParent<Health>();
+            if (h) h.TakeDamage(damage, ownerTeam);
+        }
+
         Destroy(gameObject);
     }
 }
