@@ -16,7 +16,6 @@ public class BulletProjectile : MonoBehaviour
 
     void OnCollisionEnter(Collision c)
     {
-        // evita acertar no emissor (mesmo root)
         if (ownerRoot && c.transform.root == ownerRoot) return;
 
         else

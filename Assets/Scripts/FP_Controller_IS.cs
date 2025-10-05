@@ -4,30 +4,34 @@ using UnityEngine.InputSystem;
 [RequireComponent(typeof(CharacterController))]
 public class FP_Controller_IS : MonoBehaviour
 {
-    [Header("Refs")] [SerializeField] Transform cameraRoot;
+    [Header("Refs")]
+    [SerializeField] Transform cameraRoot;
     CharacterController cc;
     Animator animator;
 
-    [Header("Input Actions")] [SerializeField]
-    InputActionReference move;
-
+    [Header("Input Actions")]
+    [SerializeField] InputActionReference move;
     [SerializeField] InputActionReference look;
     [SerializeField] InputActionReference jump;
     [SerializeField] InputActionReference sprint;
     [SerializeField] InputActionReference crouch;
 
-    [Header("Velocidades")] public float walkSpeed = 6.5f;
+    [Header("Velocidades")]
+    public float walkSpeed = 6.5f;
     public float sprintSpeed = 10f;
     public float crouchSpeed = 3f;
 
-    [Header("Aceleração (suavidade)")] public float accelGround = 14f;
+    [Header("Aceleração (suavidade)")]
+    public float accelGround = 14f;
     public float accelAir = 6f;
 
-    [Header("Salto / Gravidade")] public float gravity = -28f;
+    [Header("Salto / Gravidade")]
+    public float gravity = -28f;
     public float jumpHeight = 1.8f;
     public float maxFallSpeed = -50f;
 
-    [Header("Câmara")] public float sens = 0.2f;
+    [Header("Câmara")]
+    public float sens = 0.2f;
     float xRot;
 
     // estado
@@ -35,13 +39,15 @@ public class FP_Controller_IS : MonoBehaviour
     bool canJump = true;
     bool groundedPrev = true;
 
-    // crouch
-    [Header("Crouch (Hold)")] public float crouchHeight = 1.0f;
+    // crouch (TOGGLE)
+    [Header("Crouch (Toggle)")]
+    public float crouchHeight = 1.0f;
     public float crouchCamYOffset = -0.4f;
     public float crouchSmooth = 12f;
     float originalHeight;
     float cameraRootBaseY;
     float stepOffsetOriginal;
+    bool isCrouching;
 
     void Awake()
     {
@@ -57,6 +63,16 @@ public class FP_Controller_IS : MonoBehaviour
         cc.minMoveDistance = 0f;
         cc.slopeLimit = Mathf.Max(cc.slopeLimit, 45f);
         cc.stepOffset = Mathf.Max(cc.stepOffset, 0.3f);
+        
+        isCrouching = false;
+        cc.height = originalHeight;
+        cc.center = new Vector3(0f, originalHeight * 0.5f, 0f);
+        if (cameraRoot)
+        {
+            var p = cameraRoot.localPosition;
+            p.y = cameraRootBaseY;
+            cameraRoot.localPosition = p;
+        }
     }
 
     void OnEnable()
@@ -83,81 +99,95 @@ public class FP_Controller_IS : MonoBehaviour
         Cursor.visible = true;
     }
 
-void Update()
-{
-    // -------- Olhar --------
-    Vector2 lookDelta = look.action.ReadValue<Vector2>();
-    xRot = Mathf.Clamp(xRot - lookDelta.y * sens, -85f, 85f);
-    if (cameraRoot) cameraRoot.localRotation = Quaternion.Euler(xRot, 0f, 0f);
-    transform.Rotate(Vector3.up * (lookDelta.x * sens));
-
-    // -------- Crouch (hold) --------
-    bool wantsCrouch = crouch && crouch.action.IsPressed();
-    float targetHeight  = wantsCrouch ? crouchHeight : originalHeight;
-    float targetCenterY = targetHeight * 0.5f;
-
-    cc.height = Mathf.Lerp(cc.height, targetHeight, Time.deltaTime * crouchSmooth);
-    cc.center = Vector3.Lerp(cc.center, new Vector3(0f, targetCenterY, 0f), Time.deltaTime * crouchSmooth);
-    cc.stepOffset = wantsCrouch ? 0.1f : stepOffsetOriginal;
-
-    if (cameraRoot)
+    void Update()
     {
-        float targetCamY = cameraRootBaseY + (wantsCrouch ? crouchCamYOffset : 0f);
-        Vector3 camLocal = cameraRoot.localPosition;
-        camLocal.y = Mathf.Lerp(camLocal.y, targetCamY, Time.deltaTime * crouchSmooth);
-        cameraRoot.localPosition = camLocal;
+        // -------- Olhar --------
+        Vector2 lookDelta = look.action.ReadValue<Vector2>();
+        xRot = Mathf.Clamp(xRot - lookDelta.y * sens, -85f, 85f);
+        if (cameraRoot) cameraRoot.localRotation = Quaternion.Euler(xRot, 0f, 0f);
+        transform.Rotate(Vector3.up * (lookDelta.x * sens));
+
+        // -------- Crouch (TOGGLE) --------
+        if (crouch && crouch.action.WasPressedThisFrame())
+            isCrouching = !isCrouching;
+        
+        // if (!isCrouching && CabeçaBateNoTeto()) isCrouching = true;
+
+        float targetHeight  = isCrouching ? crouchHeight : originalHeight;
+        float targetCenterY = targetHeight * 0.5f;
+
+        cc.height = Mathf.Lerp(cc.height, targetHeight, Time.deltaTime * crouchSmooth);
+        cc.center = Vector3.Lerp(cc.center, new Vector3(0f, targetCenterY, 0f), Time.deltaTime * crouchSmooth);
+        cc.stepOffset = isCrouching ? 0.1f : stepOffsetOriginal;
+
+        if (cameraRoot)
+        {
+            float targetCamY = cameraRootBaseY + (isCrouching ? crouchCamYOffset : 0f);
+            Vector3 camLocal = cameraRoot.localPosition;
+            camLocal.y = Mathf.Lerp(camLocal.y, targetCamY, Time.deltaTime * crouchSmooth);
+            cameraRoot.localPosition = camLocal;
+        }
+
+        // -------- Movimento horizontal --------
+        Vector2 m = move.action.ReadValue<Vector2>();
+        Vector3 inputDir = (transform.right * m.x + transform.forward * m.y);
+        if (inputDir.sqrMagnitude > 1f) inputDir.Normalize();
+
+        // sprint desativado quando crouch
+        bool sprinting = (sprint && sprint.action.IsPressed()) && !isCrouching;
+
+        float targetSpeed = isCrouching ? crouchSpeed :
+                            (sprinting ? sprintSpeed : walkSpeed);
+
+        Vector3 targetHorizVel = inputDir * targetSpeed;
+        float accel = cc.isGrounded ? accelGround : accelAir;
+
+        Vector3 horiz = new Vector3(velocity.x, 0f, velocity.z);
+        horiz = Vector3.MoveTowards(horiz, targetHorizVel, accel * Time.deltaTime);
+        velocity.x = horiz.x;
+        velocity.z = horiz.z;
+
+        // -------- Atualizar parâmetros do Animator --------
+        // "Speed"
+        float speedPercent = new Vector3(velocity.x, 0f, velocity.z).magnitude / sprintSpeed;
+        if (speedPercent < 0.05f) speedPercent = 0f;
+        speedPercent = Mathf.Clamp01(speedPercent);
+
+        animator.SetFloat("Speed", speedPercent, 0.1f, Time.deltaTime);
+        animator.SetBool("isCrouching", isCrouching);
+
+        // -------- Salto --------
+        if (canJump && jump.action.WasPressedThisFrame() && !isCrouching)
+        {
+            velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
+            canJump = false;
+        }
+
+        // -------- Gravidade --------
+        velocity.y += gravity * Time.deltaTime;
+        if (velocity.y < maxFallSpeed) velocity.y = maxFallSpeed;
+
+        Vector3 motion = velocity * Time.deltaTime;
+        CollisionFlags flags = cc.Move(motion);
+        bool groundedNow = (flags & CollisionFlags.Below) != 0;
+
+        if (groundedNow)
+        {
+            if (velocity.y < 0f) velocity.y = -2f;
+            if (!groundedPrev) canJump = true;
+        }
+
+        groundedPrev = groundedNow;
     }
-
-    // -------- Movimento horizontal --------
-    Vector2 m = move.action.ReadValue<Vector2>();
-    Vector3 inputDir = (transform.right * m.x + transform.forward * m.y);
-    if (inputDir.sqrMagnitude > 1f) inputDir.Normalize();
-
-    float targetSpeed = wantsCrouch ? crouchSpeed :
-                        (sprint && sprint.action.IsPressed() ? sprintSpeed : walkSpeed);
-
-    Vector3 targetHorizVel = inputDir * targetSpeed;
-
-    float accel = cc.isGrounded ? accelGround : accelAir;
-
-    Vector3 horiz = new Vector3(velocity.x, 0f, velocity.z);
-    horiz = Vector3.MoveTowards(horiz, targetHorizVel, accel * Time.deltaTime);
-    velocity.x = horiz.x;
-    velocity.z = horiz.z;
-
-    // -------- Atualizar o parâmetro Speed no Animator --------
-    float speedPercent = new Vector3(velocity.x, 0f, velocity.z).magnitude / sprintSpeed;
     
-    if (speedPercent < 0.05f)
+    /*
+    bool CabeçaBateNoTeto()
     {
-        speedPercent = 0f;
+        Vector3 worldCenter = transform.TransformPoint(cc.center);
+        float radius = cc.radius * 0.95f;
+        Vector3 bottom = worldCenter + Vector3.up * (-cc.height * 0.5f + radius);
+        Vector3 topIfStand = worldCenter + Vector3.up * (originalHeight * 0.5f - radius);
+        return Physics.CheckCapsule(bottom, topIfStand, radius, ~0, QueryTriggerInteraction.Ignore);
     }
-
-    speedPercent = Mathf.Clamp(speedPercent, 0f, 1f);
-
-    animator.SetFloat("Speed", speedPercent, 0.1f, Time.deltaTime);
-
-    // -------- Salto --------
-    if (canJump && jump.action.WasPressedThisFrame() && !wantsCrouch)
-    {
-        velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
-        canJump = false;
-    }
-
-    // -------- Gravidade --------
-    velocity.y += gravity * Time.deltaTime;
-    if (velocity.y < maxFallSpeed) velocity.y = maxFallSpeed;
-
-    Vector3 motion = velocity * Time.deltaTime;
-    CollisionFlags flags = cc.Move(motion);
-    bool groundedNow = (flags & CollisionFlags.Below) != 0;
-    
-    if (groundedNow)
-    {
-        if (velocity.y < 0f) velocity.y = -2f;
-        if (!groundedPrev) canJump = true;
-    }
-
-    groundedPrev = groundedNow;
-}
+    */
 }
