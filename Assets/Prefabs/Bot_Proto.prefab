@@ -15,6 +15,7 @@ GameObject:
   - component: {fileID: 3353205525096065713}
   - component: {fileID: -6465962347971376533}
   - component: {fileID: 5528176311267628620}
+  - component: {fileID: -5785216237079057797}
   m_Layer: 8
   m_Name: Bot_Proto
   m_TagString: Untagged
@@ -184,3 +185,22 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls: []
   healthText: {fileID: 0}
+--- !u!114 &-5785216237079057797
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7703748112432588966}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c596a8f07bdb599498e2d7c13369d86b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::BOTDeath
+  health: {fileID: 5528176311267628620}
+  isDeadField: isDead
+  delay: 0
+  destroyInstead: 0
+  toDisableOnDeath: []
+  collidersToDisable:
+  - {fileID: 4820995970386180271}
