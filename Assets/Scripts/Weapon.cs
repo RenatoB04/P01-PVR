@@ -4,7 +4,7 @@ using UnityEngine.InputSystem;
 public class Weapon : MonoBehaviour
 {
     [Header("Refs")]
-    [SerializeField] Transform firePoint;
+    public Transform firePoint;
     [SerializeField] GameObject bulletPrefab;
     [SerializeField] Transform cam;
     [SerializeField] ParticleSystem muzzleFlash;   // prefab do efeito visual
@@ -48,6 +48,16 @@ public class Weapon : MonoBehaviour
             }
         }
     }
+
+public void ShootExternally()
+{
+    // se usas "nextFire" + "fireRate" na tua arma, isto respeita a cadência
+    if (Time.time >= nextFire)
+    {
+        Shoot();
+        nextFire = Time.time + fireRate;
+    }
+}
 
     void Shoot()
     {
