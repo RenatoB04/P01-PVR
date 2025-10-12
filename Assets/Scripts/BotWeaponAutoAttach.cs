@@ -114,7 +114,7 @@ public class BotWeaponAutoFit : MonoBehaviour
             pc.rotationAtRest    = Vector3.zero;
         }
 
-        // 8) garantir que a arma do bot não usa Camera (Weapon)
+        // garantir que a arma do bot não usa Camera (Weapon)
         var w = weaponGO.GetComponent<Weapon>();
         if (w)
         {

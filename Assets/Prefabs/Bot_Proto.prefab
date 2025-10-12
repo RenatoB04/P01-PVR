@@ -1,5 +1,36 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
+--- !u!1 &1863051270376370785
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 4217968751053340756}
+  m_Layer: 0
+  m_Name: Eyes
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &4217968751053340756
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1863051270376370785}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0, y: 1.7, z: 0.1}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1289090125734755637}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &7703748112432588966
 GameObject:
   m_ObjectHideFlags: 0
@@ -302,6 +333,9 @@ PrefabInstance:
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects:
+    - targetCorrespondingSourceObject: {fileID: -8679921383154817045, guid: ce89877eef82f794d8d6ab6f211220a7, type: 3}
+      insertIndex: 0
+      addedObject: {fileID: 4217968751053340756}
     - targetCorrespondingSourceObject: {fileID: 1852576806548013000, guid: ce89877eef82f794d8d6ab6f211220a7, type: 3}
       insertIndex: -1
       addedObject: {fileID: 4325441197566079290}
@@ -340,20 +374,23 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 399cc19db4b85e74987b11213e07ad9e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BotCombat
-  weapon: {fileID: 0}
-  shootPoint: {fileID: 0}
+  weapon: {fileID: 2259406624631990773}
+  shootPoint: {fileID: 5053085250400670937}
+  eyes: {fileID: 4217968751053340756}
   playerTag: Player
   playerLayer:
     serializedVersion: 2
     m_Bits: 64
+  fovDegrees: 130
   attackRange: 25
   stopDistance: 8
-  aimTurnSpeed: 20
-  fireCooldown: 0.05
+  aimTurnSpeed: 100
+  maxShootAngle: 15
+  fireCooldown: 0.8
   aimHeightOffset: 1.1
   obstacleMask:
     serializedVersion: 2
-    m_Bits: 4294967295
+    m_Bits: 959
   debugLogs: 1
   drawRays: 1
 --- !u!114 &4070269122258445099
@@ -372,7 +409,7 @@ MonoBehaviour:
   weaponPrefab: {fileID: 5819272703007317854}
   sceneWeaponName: 
   hand: 0
-  handBoneName: RightHand
+  handBoneName: mixamorig:RightHand
   gripName: Grip
   muzzleName: FirePoint
   useParentConstraintIfAvailable: 1
@@ -440,6 +477,22 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: cd7c5b7b1dd9cd945927f3341dcc20a9, type: 3}
+--- !u!114 &2259406624631990773 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 9072642399554744007, guid: cd7c5b7b1dd9cd945927f3341dcc20a9, type: 3}
+  m_PrefabInstance: {fileID: 7112176031603164978}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a23a9b0af9540f347a43bc2d146af388, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Weapon
+--- !u!4 &5053085250400670937 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 2635639496856884203, guid: cd7c5b7b1dd9cd945927f3341dcc20a9, type: 3}
+  m_PrefabInstance: {fileID: 7112176031603164978}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &5819272703007317854 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 3634884124191348844, guid: cd7c5b7b1dd9cd945927f3341dcc20a9, type: 3}
