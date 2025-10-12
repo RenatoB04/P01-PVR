@@ -406,7 +406,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BotWeaponAutoAttach
   source: 0
-  weaponPrefab: {fileID: 5819272703007317854}
+  weaponPrefab: {fileID: 782170537623271377}
   sceneWeaponName: 
   hand: 0
   handBoneName: mixamorig:RightHand
@@ -429,16 +429,20 @@ PrefabInstance:
     m_TransformParent: {fileID: 4325441197566079290}
     m_Modifications:
     - target: {fileID: 3990662563956255723, guid: cd7c5b7b1dd9cd945927f3341dcc20a9, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 3990662563956255723, guid: cd7c5b7b1dd9cd945927f3341dcc20a9, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 0.018746255
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 3990662563956255723, guid: cd7c5b7b1dd9cd945927f3341dcc20a9, type: 3}
       propertyPath: m_LocalPosition.y
-      value: -0.24431199
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 3990662563956255723, guid: cd7c5b7b1dd9cd945927f3341dcc20a9, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 0.42869228
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 3990662563956255723, guid: cd7c5b7b1dd9cd945927f3341dcc20a9, type: 3}
       propertyPath: m_LocalRotation.w
@@ -477,12 +481,17 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: cd7c5b7b1dd9cd945927f3341dcc20a9, type: 3}
+--- !u!1 &782170537623271377 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 7523638791992422627, guid: cd7c5b7b1dd9cd945927f3341dcc20a9, type: 3}
+  m_PrefabInstance: {fileID: 7112176031603164978}
+  m_PrefabAsset: {fileID: 0}
 --- !u!114 &2259406624631990773 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 9072642399554744007, guid: cd7c5b7b1dd9cd945927f3341dcc20a9, type: 3}
   m_PrefabInstance: {fileID: 7112176031603164978}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
+  m_GameObject: {fileID: 782170537623271377}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: a23a9b0af9540f347a43bc2d146af388, type: 3}
@@ -491,11 +500,6 @@ MonoBehaviour:
 --- !u!4 &5053085250400670937 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 2635639496856884203, guid: cd7c5b7b1dd9cd945927f3341dcc20a9, type: 3}
-  m_PrefabInstance: {fileID: 7112176031603164978}
-  m_PrefabAsset: {fileID: 0}
---- !u!1 &5819272703007317854 stripped
-GameObject:
-  m_CorrespondingSourceObject: {fileID: 3634884124191348844, guid: cd7c5b7b1dd9cd945927f3341dcc20a9, type: 3}
   m_PrefabInstance: {fileID: 7112176031603164978}
   m_PrefabAsset: {fileID: 0}
 --- !u!4 &6184049349405633753 stripped
