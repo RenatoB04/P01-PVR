@@ -3,7 +3,10 @@ using UnityEngine;
 [RequireComponent(typeof(Rigidbody), typeof(Collider))]
 public class BulletProjectile : MonoBehaviour
 {
+    [Header("Dano")]
     public float damage = 20f;
+
+    [Header("Vida útil")]
     public float lifeTime = 5f;
 
     [HideInInspector] public int ownerTeam = -1;
@@ -16,19 +19,22 @@ public class BulletProjectile : MonoBehaviour
 
     void OnCollisionEnter(Collision c)
     {
-        if (ownerRoot && c.transform.root == ownerRoot) return;
+        // Evita auto-hit (atingir quem disparou)
+        if (ownerRoot && c.transform.root == ownerRoot)
+            return;
 
-        else
+        var h = c.collider.GetComponentInParent<Health>();
+        if (h)
         {
-            var h = c.collider.GetComponentInParent<Health>();
-            if (h)
-            {
-                h.TakeDamage(damage, ownerTeam);
-                CrosshairUI.Instance?.ShowHit();
-            }
+            Vector3 hitPos = c.GetContact(0).point;
+
+            // Chama a nova função que ativa Damage Indicator se for o jogador
+            h.TakeDamageFrom(damage, ownerTeam, ownerRoot ? ownerRoot : transform, hitPos);
+
+            // Hit marker (quando o jogador acerta num alvo)
+            CrosshairUI.Instance?.ShowHit();
         }
 
         Destroy(gameObject);
     }
-
 }
