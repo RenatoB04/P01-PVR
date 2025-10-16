@@ -3,6 +3,7 @@ using UnityEngine.InputSystem;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
+using static UnityEngine.Time; 
 
 public class Weapon : MonoBehaviour
 {
@@ -35,7 +36,7 @@ public class Weapon : MonoBehaviour
     Component weaponSwitcher;
 
     // Estado de tiro
-    float nextFire;
+    float nextFireTimeUnscaled; 
     CharacterController playerCC;
 
     // ---- AMMO/RELOAD (apenas para Player) ----
@@ -46,15 +47,26 @@ public class Weapon : MonoBehaviour
 
     void Awake()
     {
-        if (!cam && Camera.main) cam = Camera.main.transform;
+        // CORREÇÃO DA CÂMARA (uso da referência estável)
+        if (!cam)
+        {
+            if (FP_Controller_IS.PlayerCameraRoot != null)
+            {
+                cam = FP_Controller_IS.PlayerCameraRoot;
+            }
+            else if (Camera.main)
+            {
+                cam = Camera.main.transform;
+            }
+        }
+
         playerCC = GetComponentInParent<CharacterController>();
 
-        // ⚙️ detectar bot e libertar de configs
         if (GetComponentInParent<BotCombat>() != null)
             requireConfigForFire = false;
 
         allConfigs = GetComponentsInChildren<WeaponConfig>(true);
-        weaponSwitcher = GetComponent<WeaponSwitcher>();   // opcional
+        weaponSwitcher = GetComponent<WeaponSwitcher>();
 
         RefreshActiveConfig(applyImmediately: true);
         UpdateHUD();
@@ -62,9 +74,14 @@ public class Weapon : MonoBehaviour
 
     void OnEnable()
     {
+        // Garante que o Input está ligado quando a arma está ativa
         if (shootAction) shootAction.action.Enable();
         if (reloadAction) reloadAction.action.Enable();
+        
+        // Reset de emergência do estado da arma (limpa cooldown e isReloading)
+        ResetWeaponState();
     }
+
     void OnDisable()
     {
         // guarda munição atual no dicionário quando a arma sair de ativa
@@ -77,50 +94,82 @@ public class Weapon : MonoBehaviour
         // desativa inputs
         if (shootAction) shootAction.action.Disable();
         if (reloadAction) reloadAction.action.Disable();
+        
+        isReloading = false;
+        StopAllCoroutines(); 
+    }
+    
+    // MÉTODO DE EMERGÊNCIA (Reset de estado)
+    public void ResetWeaponState()
+    {
+        nextFireTimeUnscaled = Time.unscaledTime; 
+        isReloading = false;
+        StopAllCoroutines();
     }
 
     void Update()
     {
         RefreshActiveConfig(applyImmediately: true);
 
-        // Player sem config (ex.: knife) -> não dispara
         if (requireConfigForFire && activeConfig == null) return;
+        
+        // CORREÇÃO CRÍTICA: Se o input for NULL (perdido), tentamos forçar o enable
+        if (shootAction != null && !shootAction.action.enabled)
+        {
+            shootAction.action.Enable();
+        }
 
-        // RELOAD input (só interessa ao player)
+        // 1. INPUT DE RECARGA MANUAL
         if (requireConfigForFire && reloadAction && reloadAction.action.WasPressedThisFrame())
         {
             TryReload();
         }
 
+        // 2. CORREÇÃO DE BLOQUEIO E AUTO-RELOAD FORÇADO: 
+        if (requireConfigForFire && currentAmmo <= 0 && reserveAmmo > 0 && !isReloading)
+        {
+            TryReload();
+        }
+        
+        // Bloqueia o tiro durante a recarga
+        if (isReloading) return;
+
         bool automatic = activeConfig ? activeConfig.automatic : false;
         float useFireRate = activeConfig ? activeConfig.fireRate : fireRate;
 
-        bool wantsShoot = automatic
-            ? (shootAction && shootAction.action.IsPressed())
-            : (shootAction && shootAction.action.WasPressedThisFrame());
+        // CRÍTICO: Não use shootAction.action.IsPressed() se for nulo!
+        bool wantsShoot = shootAction != null && (automatic
+            ? shootAction.action.IsPressed()
+            : shootAction.action.WasPressedThisFrame());
+        
+        // Verifica o cooldown usando tempo NÃO ESCALADO
+        if (!wantsShoot || Time.unscaledTime < nextFireTimeUnscaled)
+        {
+            return;
+        }
 
-        if (!wantsShoot || Time.time < nextFire) return;
-
-        // Gate de munição (apenas player)
+        // 3. Lógica de Disparo
         if (requireConfigForFire)
         {
             if (currentAmmo <= 0)
             {
+                // Toca som seco (chega aqui se TryReload() falhou ou reserva está a 0)
                 if (fireAudio && activeConfig && activeConfig.emptyClickSfx)
                     fireAudio.PlayOneShot(activeConfig.emptyClickSfx);
-                TryReload();
-                return;
+                return; 
             }
             currentAmmo--;
         }
 
         Shoot();
-        nextFire = Time.time + useFireRate;
+        
+        // Define o novo cooldown usando tempo NÃO ESCALADO
+        nextFireTimeUnscaled = Time.unscaledTime + useFireRate;
 
         if (requireConfigForFire)
         {
             UpdateHUD();
-            // auto-reload quando esvazia o carregador e há reserva
+            // Verifica Auto-Reload *após* o tiro ter esvaziado o carregador
             if (currentAmmo == 0 && reserveAmmo > 0) TryReload();
         }
     }
@@ -128,24 +177,22 @@ public class Weapon : MonoBehaviour
     // Chamado pelos bots
     public void ShootExternally()
     {
-        // Player sem config não dispara; Bot ignora esta regra
         if (requireConfigForFire && activeConfig == null) return;
 
         float useFireRate = activeConfig ? activeConfig.fireRate : fireRate;
-        if (Time.time >= nextFire)
+        
+        // CRÍTICO: Bots também usam tempo não escalado
+        if (Time.unscaledTime >= nextFireTimeUnscaled)
         {
-            // Bots não gastam munição
             Shoot();
-            nextFire = Time.time + useFireRate;
+            nextFireTimeUnscaled = Time.unscaledTime + useFireRate;
         }
     }
 
     void Shoot()
     {
-        // Player sem config (knife) bloqueia disparo
         if (requireConfigForFire && activeConfig == null) return;
 
-        // Seleciona fontes (config p/ player; locais p/ bot)
         Transform useFP = activeConfig ? activeConfig.firePoint : firePoint;
         GameObject useBullet = activeConfig ? activeConfig.bulletPrefab : bulletPrefab;
         ParticleSystem useMuzzle = activeConfig ? activeConfig.muzzleFlashPrefab : muzzleFlash;
@@ -154,7 +201,6 @@ public class Weapon : MonoBehaviour
 
         if (!useBullet || !useFP) return;
 
-        // direção (câmara quando existe; senão firePoint)
         Vector3 dir;
         Ray ray = new Ray(cam ? cam.position : useFP.position, cam ? cam.forward : useFP.forward);
         if (Physics.Raycast(ray, out var hit, useMaxDist, ~0, QueryTriggerInteraction.Ignore))
@@ -162,14 +208,14 @@ public class Weapon : MonoBehaviour
         else
             dir = (ray.GetPoint(useMaxDist) - useFP.position).normalized;
 
-        // bala
         var bullet = Instantiate(useBullet, useFP.position, Quaternion.LookRotation(dir));
         bullet.transform.position += dir * 0.2f;
 
         if (bullet.TryGetComponent<Rigidbody>(out var rb))
-            rb.linearVelocity = dir * useSpeed; // Unity 6
+        {
+            rb.linearVelocity = dir * useSpeed; 
+        }
 
-        // equipa / dono
         if (bullet.TryGetComponent<BulletProjectile>(out var bp))
         {
             var h = GetComponentInParent<Health>();
@@ -177,7 +223,6 @@ public class Weapon : MonoBehaviour
             bp.ownerRoot = h ? h.transform.root : transform.root;
         }
 
-        // VFX
         if (useMuzzle)
         {
             var fx = Instantiate(useMuzzle, useFP.position, useFP.rotation, useFP);
@@ -185,13 +230,26 @@ public class Weapon : MonoBehaviour
             Destroy(fx.gameObject, 0.2f);
         }
 
-        // SFX
         var fireClip = activeConfig ? activeConfig.fireSfx : null;
-        if (fireAudio && fireClip) fireAudio.PlayOneShot(fireClip);
+        if (fireAudio && fireClip) fireAudio.PlayOneShot(fireAudio.clip);
         else if (fireAudio && fireAudio.clip) fireAudio.PlayOneShot(fireAudio.clip);
 
         CrosshairUI.Instance?.Kick();
     }
+    
+    // NOVO: Adiciona munição de reserva (para Pickups)
+    public void AddReserveAmmo(int amount)
+    {
+        if (!requireConfigForFire || activeConfig == null) return;
+        if (amount <= 0) return;
+
+        reserveAmmo = Mathf.Max(0, reserveAmmo + amount);
+        UpdateHUD();
+
+        // Tenta fazer auto-reload se o carregador estiver vazio
+        if (currentAmmo == 0) TryReload();
+    }
+
 
     // ---------- AMMO / RELOAD ----------
     void TryReload()
@@ -201,17 +259,18 @@ public class Weapon : MonoBehaviour
         if (currentAmmo >= activeConfig.magSize) return;
         if (reserveAmmo <= 0) return;
 
+        StopAllCoroutines(); 
         StartCoroutine(ReloadRoutine());
     }
 
     IEnumerator ReloadRoutine()
     {
         isReloading = true;
-
+        
         if (fireAudio && activeConfig && activeConfig.reloadSfx)
             fireAudio.PlayOneShot(activeConfig.reloadSfx);
 
-        yield return new WaitForSeconds(activeConfig.reloadTime);
+        yield return new WaitForSecondsRealtime(activeConfig.reloadTime); 
 
         int needed = activeConfig.magSize - currentAmmo;
         int toLoad = Mathf.Min(needed, reserveAmmo);
@@ -224,7 +283,7 @@ public class Weapon : MonoBehaviour
 
     void UpdateHUD()
     {
-        if (!requireConfigForFire) return; // bots não usam HUD
+        if (!requireConfigForFire) return; 
         ammoUI?.Set(currentAmmo, reserveAmmo);
     }
 
@@ -241,7 +300,7 @@ public class Weapon : MonoBehaviour
         if (newCfg == activeConfig) return;
 
         activeConfig = newCfg;
-        isReloading = false; // cancela reloads pendentes ao trocar
+        isReloading = false; 
 
         if (applyImmediately && activeConfig != null)
         {
@@ -268,7 +327,6 @@ public class Weapon : MonoBehaviour
             UpdateHUD();
         }
 
-        // Se a arma ativa (player) não tiver config (ex.: Knife), garante que o HUD limpa
         if (applyImmediately && activeConfig == null)
         {
             ammoUI?.Clear();
@@ -287,7 +345,7 @@ public class Weapon : MonoBehaviour
             if (mi != null)
             {
                 var go = mi.Invoke(weaponSwitcher, null) as GameObject;
-                if (go) return go.GetComponent<WeaponConfig>(); // pode ser null (ex.: Knife)
+                if (go) return go.GetComponent<WeaponConfig>();
             }
         }
 
@@ -296,6 +354,6 @@ public class Weapon : MonoBehaviour
             if (cfg && cfg.gameObject.activeInHierarchy)
                 return cfg;
 
-        return null; // sem config ativa (ex.: Knife) -> respeitado
+        return null; 
     }
 }

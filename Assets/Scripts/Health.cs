@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.Events;
 using TMPro;
+using System; 
 
 public class Health : MonoBehaviour
 {
@@ -15,6 +16,9 @@ public class Health : MonoBehaviour
     [Header("Events")]
     public UnityEvent<float, float> OnHealthChanged; 
     public UnityEvent OnDied;
+    
+    // EVENTO NECESSÁRIO: Dispara quando o dano é aplicado (para IA)
+    public event Action<float, Transform> OnTookDamage;
 
     [Header("UI (Opcional)")]
     public TextMeshProUGUI healthText; // texto hp UI
@@ -29,17 +33,11 @@ public class Health : MonoBehaviour
 
     // ------------------ DANO ------------------
 
-    /// <summary>
-    /// Método antigo — mantém compatibilidade.
-    /// </summary>
     public void TakeDamage(float amount, int instigatorTeam = -1)
     {
         InternalApplyDamage(amount, instigatorTeam, null, Vector3.zero, hasSource: false);
     }
 
-    /// <summary>
-    /// Nova versão — recebe também o atacante e posição do impacto.
-    /// </summary>
     public void TakeDamageFrom(float amount, int instigatorTeam, Transform attacker, Vector3 hitWorldPos)
     {
         InternalApplyDamage(amount, instigatorTeam, attacker, hitWorldPos, hasSource: true);
@@ -55,6 +53,13 @@ public class Health : MonoBehaviour
 
         float oldHealth = currentHealth;
         currentHealth = Mathf.Max(0, currentHealth - amount);
+
+        // Dispara o evento de dano ANTES de morrer, se a vida realmente diminuiu
+        if (currentHealth < oldHealth)
+        {
+            // CRÍTICO: Dispara o evento de DANO para o BotAI
+            OnTookDamage?.Invoke(amount, attacker);
+        }
 
         UpdateHealthUI();
         OnHealthChanged?.Invoke(currentHealth, maxHealth);

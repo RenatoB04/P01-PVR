@@ -4,6 +4,9 @@ using UnityEngine.InputSystem;
 [RequireComponent(typeof(CharacterController))]
 public class FP_Controller_IS : MonoBehaviour
 {
+    // NOVO: Referência pública estática para a câmara (Acesso estável)
+    public static Transform PlayerCameraRoot { get; private set; }
+
     [Header("Refs")]
     [SerializeField] Transform cameraRoot;
     CharacterController cc;
@@ -53,6 +56,12 @@ public class FP_Controller_IS : MonoBehaviour
     {
         cc = GetComponent<CharacterController>();
         animator = GetComponentInChildren<Animator>();
+
+        // CRÍTICO: Define a referência estática para a Weapon
+        if (cameraRoot != null)
+        {
+            PlayerCameraRoot = cameraRoot;
+        }
 
         originalHeight = cc.height;
         stepOffsetOriginal = cc.stepOffset;

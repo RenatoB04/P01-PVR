@@ -14,8 +14,8 @@ public class BotSpawner_Proto : MonoBehaviour
     [Tooltip("Segundos a aguardar após a morte para nascer um novo bot.")]
     public float respawnDelay = 5f;
 
-    int nextSpawnIndex = 0;   // para rodar pelos spawn points
-    int spawnedTotal = 0;     // apenas para nomear os bots
+    int nextSpawnIndex = 0;
+    int spawnedTotal = 0;
 
     void Start()
     {
@@ -37,32 +37,37 @@ public class BotSpawner_Proto : MonoBehaviour
     }
 
     // ------------------------------------------------------------
-    // Spawn unitário (usado no início e no respawn)
+    // Spawn unitário (CRÍTICO: Injeção de Waypoints e Link de Eventos)
     // ------------------------------------------------------------
     void SpawnOne()
     {
         var spawnPoint = spawnPoints[nextSpawnIndex % spawnPoints.Length];
         nextSpawnIndex++;
 
+        // 1. Instanciar
         var bot = Instantiate(botPrefab, spawnPoint.position, spawnPoint.rotation);
         spawnedTotal++;
         bot.name = $"Bot_{spawnedTotal}";
 
-        // Atribuir waypoints à AI, se necessário
+        // 2. ATRIBUIR WAYPOINTS AO BotAI_Proto E INICIAR PATRULHA
         var ai = bot.GetComponent<BotAI_Proto>();
         if (ai != null)
         {
-            if (ai.patrolPoints == null || ai.patrolPoints.Length == 0)
-                ai.patrolPoints = patrolWaypoints;
+            ai.patrolPoints = patrolWaypoints;
+            
+            // CRÍTICO: Inicia a patrulha AGORA que a lista está completa
+            if (ai.patrolPoints != null && ai.patrolPoints.Length > 0)
+            {
+                ai.SetInitialDestination(ai.patrolPoints[0].position); 
+            }
         }
 
-        // Ligar o script BotRespawnLink (caso não exista)
+        // 3. Ligar o script BotRespawnLink e Eventos
         var link = bot.GetComponent<BotRespawnLink>();
         if (!link) link = bot.AddComponent<BotRespawnLink>();
         link.spawner = this;
         link.patrolWaypoints = patrolWaypoints;
 
-        // Ligar ao evento de morte para agendar respawn (fallback direto)
         var death = bot.GetComponent<BOTDeath>();
         if (death != null)
         {
@@ -80,10 +85,7 @@ public class BotSpawner_Proto : MonoBehaviour
     // ------------------------------------------------------------
     void HandleBotDied(BOTDeath death)
     {
-        // segurança: remove o handler (caso o objeto seja destruído)
         death.OnDied -= HandleBotDied;
-
-        // agenda a reposição de 1 bot para manter o 'count' constante
         StartCoroutine(RespawnRoutine());
     }
 
@@ -103,10 +105,7 @@ public class BotSpawner_Proto : MonoBehaviour
     // ------------------------------------------------------------
     public void ScheduleRespawn(Transform[] waypointsFromDead)
     {
-        // (Opcional) se quiseres usar os waypoints do bot morto
-        if (waypointsFromDead != null && waypointsFromDead.Length > 0)
-            this.patrolWaypoints = waypointsFromDead;
-
+        // Usa o fluxo de respawn já existente
         StartCoroutine(RespawnRoutine());
     }
 }

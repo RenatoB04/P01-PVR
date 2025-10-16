@@ -22,7 +22,8 @@ public class RoundTimer : MonoBehaviour
     {
         if (!running) return;
 
-        timeLeft -= Time.unscaledDeltaTime; // mostra tempo mesmo se pausares por engano
+        // CR√çTICO: Usar Time.unscaledDeltaTime para ignorar Time.timeScale
+        timeLeft -= Time.unscaledDeltaTime; 
         if (timeLeft < 0f) timeLeft = 0f;
 
         UpdateTimerUI(timeLeft);
@@ -33,25 +34,23 @@ public class RoundTimer : MonoBehaviour
 
     public void StartRound()
     {
-        Time.timeScale = 1f;   // garante jogo a correr
+        // CORRE√á√ÉO: Remove Time.timeScale = 1f;
         running = true;
         timeLeft = roundSeconds;
         UpdateTimerUI(timeLeft);
 
         if (deathPanel) deathPanel.SetActive(false);
 
-        // Opcional: limpar score no inÌcio
+        // Opcional: limpar score no in√≠cio
         if (ScoreManager.Instance) ScoreManager.Instance.ResetScore();
     }
 
     public void EndRound()
     {
         running = false;
-        Time.timeScale = 0f;   // pausa jogo inteiro
+        // CORRE√á√ÉO: Remove Time.timeScale = 0f; (A PAUSA DEVE SER FEITA PELO PlayerDeathAndRespawn.cs)
 
         if (deathPanel) deathPanel.SetActive(true);
-        // No bot„o "Respawn" do painel, adiciona tambÈm RoundTimer.StartRound()
-        // (alÈm do que j· faz para respawn quando morres)
     }
 
     void UpdateTimerUI(float seconds)
