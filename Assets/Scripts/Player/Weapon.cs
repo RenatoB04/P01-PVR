@@ -109,7 +109,8 @@ public class Weapon : MonoBehaviour
 
     void Update()
     {
-        RefreshActiveConfig(applyImmediately: true);
+        if (activeConfig == null)
+            RefreshActiveConfig(applyImmediately: true);
 
         if (requireConfigForFire && activeConfig == null) return;
         
@@ -243,11 +244,18 @@ public class Weapon : MonoBehaviour
         if (!requireConfigForFire || activeConfig == null) return;
         if (amount <= 0) return;
 
-        reserveAmmo = Mathf.Max(0, reserveAmmo + amount);
+        int bulletsToAdd = amount * activeConfig.magSize;
+        reserveAmmo += bulletsToAdd;
+
+        // 🟢 Sincroniza o novo valor no dicionário de munição da arma ativa
+        if (ammoByConfig.ContainsKey(activeConfig))
+            ammoByConfig[activeConfig].reserve = reserveAmmo;
+
         UpdateHUD();
 
-        // Tenta fazer auto-reload se o carregador estiver vazio
-        if (currentAmmo == 0) TryReload();
+        // Auto-reload se estiver vazia
+        if (currentAmmo == 0)
+            TryReload();
     }
 
 
@@ -297,10 +305,16 @@ public class Weapon : MonoBehaviour
     void RefreshActiveConfig(bool applyImmediately)
     {
         var newCfg = FindActiveConfig();
+
+        // Se o novo config for nulo, sai
+        if (newCfg == null) return;
+
+        // 🔒 se é o mesmo config, não mexe
         if (newCfg == activeConfig) return;
 
+        // Troca de config apenas se mudou realmente
         activeConfig = newCfg;
-        isReloading = false; 
+        isReloading = false;
 
         if (applyImmediately && activeConfig != null)
         {
