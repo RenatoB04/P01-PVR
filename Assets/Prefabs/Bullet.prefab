@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: 6082259677471351110}
   - component: {fileID: 7187590067403352912}
   - component: {fileID: 2773298639649144691}
+  - component: {fileID: 9148411945968410144}
   - component: {fileID: -1708787534474456793}
   m_Layer: 9
   m_Name: Bullet
@@ -140,6 +141,31 @@ Rigidbody:
   m_Interpolate: 1
   m_Constraints: 0
   m_CollisionDetection: 2
+--- !u!114 &9148411945968410144
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7869800553090129627}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
+  GlobalObjectIdHash: 1328357595
+  InScenePlacedSourceGlobalObjectIdHash: 0
+  DeferredDespawnTick: 0
+  Ownership: 1
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 1
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
+  SyncOwnerTransformWhenParented: 1
+  AllowOwnerToParent: 0
 --- !u!114 &-1708787534474456793
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -152,7 +178,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 489570af2d9f25148b42b4f6f5665b12, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BulletProjectile
+  ShowTopMostFoldoutHeaderGroup: 1
   damage: 20
   lifeTime: 5
+  hittableLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
   ownerTeam: -1
   ownerRoot: {fileID: 0}
+  ownerClientId: 18446744073709551615

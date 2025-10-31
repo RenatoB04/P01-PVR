@@ -397,6 +397,7 @@ GameObject:
   - component: {fileID: 6108533288346566004}
   - component: {fileID: 2742859909207369118}
   - component: {fileID: 395597818018424008}
+  - component: {fileID: -5387876462040107482}
   m_Layer: 6
   m_Name: Player
   m_TagString: Player
@@ -511,7 +512,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 1053724844
+  GlobalObjectIdHash: 1654723304
   InScenePlacedSourceGlobalObjectIdHash: 0
   DeferredDespawnTick: 0
   Ownership: 1
@@ -569,10 +570,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5c70b6345fe23f74cbe87231bb4b1b4e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Health
+  ShowTopMostFoldoutHeaderGroup: 1
   maxHealth: 100
-  team: 1
-  currentHealth: 0
-  isDead: 0
+  currentHealth:
+    m_InternalValue: 100
+  isDead:
+    m_InternalValue: 0
+  team:
+    m_InternalValue: -1
   OnHealthChanged:
     m_PersistentCalls:
       m_Calls: []
@@ -608,14 +613,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: cf84881b68c52aa4ca01f3914d63f174, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerDeathAndRespawn
+  ShowTopMostFoldoutHeaderGroup: 1
   health: {fileID: 3425268391848231974}
-  spawnPoint: {fileID: 8985411324770440169}
-  deathMenu: {fileID: 0}
-  respawnButton: {fileID: 0}
   componentsToDisable:
   - {fileID: 662064468204449256}
   switchToIgnoreRaycastOnDeath: 1
   ignoreRaycastLayer: 2
+  deathMenuCanvas: {fileID: 0}
 --- !u!114 &395597818018424008
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -662,6 +666,30 @@ MonoBehaviour:
   SwitchTransformSpaceWhenParented: 0
   Interpolate: 1
   SlerpPosition: 0
+--- !u!114 &-5387876462040107482
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9115588152224453141}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: efaeca0c3c0274d41a6156f57e84b16a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerScore
+  ShowTopMostFoldoutHeaderGroup: 1
+  pointsPerKill: 100
+  Kills:
+    m_InternalValue: 0
+  Score:
+    m_InternalValue: 0
+  OnScoreChanged:
+    m_PersistentCalls:
+      m_Calls: []
+  OnKillsChanged:
+    m_PersistentCalls:
+      m_Calls: []
 --- !u!1001 &1170574359946458000
 PrefabInstance:
   m_ObjectHideFlags: 0

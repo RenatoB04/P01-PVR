@@ -8,7 +8,6 @@ public class RoundTimer : MonoBehaviour
 
     [Header("UI")]
     [SerializeField] TMP_Text timerText;       // arrasta o texto do timer (TMP)
-    [SerializeField] GameObject deathPanel;    // o MESMO painel de respawn da morte
 
     float timeLeft;
     bool running;
@@ -39,7 +38,6 @@ public class RoundTimer : MonoBehaviour
         timeLeft = roundSeconds;
         UpdateTimerUI(timeLeft);
 
-        if (deathPanel) deathPanel.SetActive(false);
 
         // Opcional: limpar score no início
         if (ScoreManager.Instance) ScoreManager.Instance.ResetScore();
@@ -50,7 +48,6 @@ public class RoundTimer : MonoBehaviour
         running = false;
         // CORREÇÃO: Remove Time.timeScale = 0f; (A PAUSA DEVE SER FEITA PELO PlayerDeathAndRespawn.cs)
 
-        if (deathPanel) deathPanel.SetActive(true);
     }
 
     void UpdateTimerUI(float seconds)

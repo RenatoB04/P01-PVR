@@ -1,129 +1,215 @@
 using UnityEngine;
-using UnityEngine.Events;
-using UnityEngine.UI;
-using System.Collections; // Para Coroutine
+using Unity.Netcode;
+using Unity.Netcode.Components; // necessário para NetworkTransform
+using System;
 
-public class PlayerDeathAndRespawn : MonoBehaviour
+public class PlayerDeathAndRespawn : NetworkBehaviour
 {
     [Header("Refs")]
-    public Health health;                    // arrasta o Health do player
-    public Transform spawnPoint;             // ponto inicial
-    public GameObject deathMenu;             // Canvas/Panel que mostra o menu
-    public Button respawnButton;             // botão "Respawn" 
+    [SerializeField] private NetworkTransform netTransform;
+    [SerializeField] private CharacterController characterController;
+    [SerializeField] private Health health;
 
-    [Header("Controlos a desativar quando morre")]
-    [Tooltip("Scripts de movimento/tiro/câmara a desligar quando morre")]
-    public Behaviour[] componentsToDisable; 
+    [Header("Spawns")]
+    [Tooltip("Opcional. Se vazio, é encontrado automaticamente (SpawnsManager.I ou FindObjectOfType).")]
+    [SerializeField] private SpawnsManager spawnsManager;
+    [Tooltip("Modo de seleção do ponto de spawn.")]
+    [SerializeField] private SelectionMode selectionMode = SelectionMode.Random;
+    [Tooltip("Usar rotação do ponto de spawn (se falso, usa Quaternion.identity).")]
+    [SerializeField] private bool useSpawnRotation = true;
 
-    [Header("Opcional")]
-    public bool switchToIgnoreRaycastOnDeath = true;  
-    public int ignoreRaycastLayer = 2;                
-    private int originalLayer;
+    [Header("Offset/Segurança")]
+    [Tooltip("Offset vertical aplicado acima do ponto de spawn.")]
+    [SerializeField] private float spawnUpOffset = 1.5f;
+    [Tooltip("Raycast para ajustar o spawn ao chão (recomendado).")]
+    [SerializeField] private bool groundSnap = true;
+    [SerializeField] private float groundRaycastUp = 2f;
+    [SerializeField] private float groundRaycastDown = 10f;
 
-    CharacterController cc;
-    bool isMenuShown;
+    private static int s_roundRobinIndex = 0;
+
+    public enum SelectionMode
+    {
+        Random,
+        RoundRobin, // usa SpawnsManager.GetNext()
+        ByClientId  // determinístico: OwnerClientId % count
+    }
 
     void Awake()
     {
-        if (!health) health = GetComponent<Health>();
-        cc = GetComponent<CharacterController>();
-        originalLayer = gameObject.layer;
+        if (!netTransform) netTransform = GetComponentInChildren<NetworkTransform>();
+        if (!characterController) characterController = GetComponentInChildren<CharacterController>();
+        if (!health) health = GetComponentInChildren<Health>();
     }
 
-    void OnEnable()
+    public override void OnNetworkSpawn()
     {
-        if (health) health.OnDied.AddListener(OnPlayerDied);
-        if (respawnButton) respawnButton.onClick.AddListener(OnClickRespawn);
-        HideMenu();
-        // Garante que o controlo está ligado no início
-        SetControlsEnabled(true); 
+        base.OnNetworkSpawn();
+        if (!netTransform) netTransform = GetComponentInChildren<NetworkTransform>();
+        if (!spawnsManager)
+            spawnsManager = SpawnsManager.I ? SpawnsManager.I : FindObjectOfType<SpawnsManager>();
     }
 
-    void OnDisable()
+    [ServerRpc(RequireOwnership = false)]
+    public void RespawnServerRpc(ServerRpcParams rpcParams = default)
     {
-        if (health) health.OnDied.RemoveListener(OnPlayerDied);
-        if (respawnButton) respawnButton.onClick.RemoveListener(OnClickRespawn);
-    }
+        if (!IsServer) return;
 
-    void OnPlayerDied()
-    {
-        // Desligar controlos
-        SetControlsEnabled(false);
-
-        // Evitar que bots detetem enquanto morto
-        if (switchToIgnoreRaycastOnDeath)
-            gameObject.layer = ignoreRaycastLayer;
-
-        // Mostrar menu
-        ShowMenu();
-    }
-
-    public void OnClickRespawn() => Respawn();
-
-    public void Respawn()
-    {
-        // 1) Repor vida/estado
-        health.ResetFullHealth();
-
-        // 2) Reposicionar no spawn
-        if (cc) cc.enabled = false;
-        transform.position = spawnPoint ? spawnPoint.position : Vector3.zero;
-        transform.rotation = spawnPoint ? spawnPoint.rotation : Quaternion.identity;
-        if (cc) cc.enabled = true;
-
-        // 3) Repor layer original
-        if (switchToIgnoreRaycastOnDeath)
-            gameObject.layer = originalLayer;
-
-        // 4) Fechar menu e reativar controlos (CHAMADA DE LIMPEZA CRÍTICA)
-        HideMenu();
-        SetControlsEnabled(true);
-        
-        // CRÍTICO: Forçar o Weapon a limpar o cooldown AGORA
-        Weapon playerWeapon = GetComponentInChildren<Weapon>(true);
-        if (playerWeapon != null)
+        if (health == null)
         {
-            playerWeapon.ResetWeaponState();
+            Debug.LogError("[Respawn] Health nulo no servidor.");
+            return;
         }
+
+        if (!health.isDead.Value)
+        {
+            Debug.LogWarning("[Respawn] Ignorado: jogador não está morto.");
+            return;
+        }
+
+        GetSpawnPose(out Vector3 spawnPos, out Quaternion spawnRot);
+
+        Debug.Log($"[Respawn] Iniciando respawn no servidor. SpawnPos={spawnPos}");
+
+        health.ResetFullHealth(); // server -> direto
+        ServerTeleport(spawnPos, spawnRot);
     }
 
-    void SetControlsEnabled(bool enabled)
+    public void ServerTeleport(Vector3 spawnPos, Quaternion spawnRot)
     {
-        if (componentsToDisable != null)
+        if (!IsServer) return;
+
+        bool ccWasEnabled = characterController && characterController.enabled;
+        if (ccWasEnabled) characterController.enabled = false;
+
+        Vector3 scale = transform.localScale;
+
+        if (netTransform != null)
         {
-            foreach (var b in componentsToDisable)
+            try
             {
-                if (b) 
+                if (netTransform.CanCommitToTransform)
                 {
-                    b.enabled = enabled;
+                    netTransform.Teleport(spawnPos, spawnRot, scale);
+                    // Dica: Owners também podem relockar localmente depois do teleport via rede
+                    GameplayCursor.Lock();
+                }
+                else
+                {
+                    var target = new ClientRpcParams
+                    {
+                        Send = new ClientRpcSendParams { TargetClientIds = new[] { OwnerClientId } }
+                    };
+                    OwnerTeleportClientRpc(spawnPos, spawnRot, scale, target);
                 }
             }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[Respawn] Exceção no teleport server: {ex.Message}. Fallback: pedir ao dono.");
+                var target = new ClientRpcParams
+                {
+                    Send = new ClientRpcSendParams { TargetClientIds = new[] { OwnerClientId } }
+                };
+                OwnerTeleportClientRpc(spawnPos, spawnRot, scale, target);
+            }
         }
-        
-        // Se a arma estava na lista componentsToDisable, ela é ligada/desligada aqui.
-        // O Weapon.cs tem o OnEnable que chama o ResetWeaponState().
+        else
+        {
+            transform.SetPositionAndRotation(spawnPos, spawnRot);
+            GameplayCursor.Lock();
+        }
 
-        // CRÍTICO: Garantir que o Time.timeScale está a 1 quando os controlos estão ligados
-        if (enabled) Time.timeScale = 1f;
-
-        // Cursor/lock state típico de FPS
-        Cursor.visible = !enabled; 
-        Cursor.lockState = enabled ? CursorLockMode.Locked : CursorLockMode.None;
+        if (ccWasEnabled) characterController.enabled = true;
     }
 
-    void ShowMenu()
+    [ClientRpc]
+    private void OwnerTeleportClientRpc(Vector3 pos, Quaternion rot, Vector3 scale, ClientRpcParams rpcParams = default)
     {
-        if (deathMenu) deathMenu.SetActive(true);
-        isMenuShown = true;
-        Cursor.visible = true;
-        Cursor.lockState = CursorLockMode.None;
-        // Tempo de jogo pausado
-        Time.timeScale = 0f;
+        if (!IsOwner) return;
+
+        bool ccWasEnabled = characterController && characterController.enabled;
+        if (ccWasEnabled) characterController.enabled = false;
+
+        if (netTransform != null)
+        {
+            try
+            {
+                netTransform.Teleport(pos, rot, scale);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[Respawn] Client(owner) Teleport falhou: {ex.Message}. Usando SetPositionAndRotation.");
+                transform.SetPositionAndRotation(pos, rot);
+                transform.localScale = scale;
+            }
+        }
+        else
+        {
+            transform.SetPositionAndRotation(pos, rot);
+            transform.localScale = scale;
+        }
+
+        // GARANTIA: no fim do respawn, bloqueia e oculta o cursor (volta à mira FPS)
+        GameplayCursor.Lock();
+
+        if (ccWasEnabled) characterController.enabled = true;
     }
 
-    void HideMenu()
+    private void GetSpawnPose(out Vector3 pos, out Quaternion rot)
     {
-        if (deathMenu) deathMenu.SetActive(false);
-        isMenuShown = false;
+        pos = Vector3.up * Mathf.Max(0.1f, spawnUpOffset);
+        rot = useSpawnRotation ? Quaternion.identity : Quaternion.identity;
+
+        var sm = spawnsManager ? spawnsManager : (SpawnsManager.I ? SpawnsManager.I : FindObjectOfType<SpawnsManager>());
+        if (sm == null || sm.points == null || sm.points.Length == 0)
+        {
+            SafeSnapToGround(ref pos);
+            return;
+        }
+
+        if (selectionMode == SelectionMode.RoundRobin)
+        {
+            sm.GetNext(out pos, out rot);
+            float extraUp = Mathf.Max(0f, spawnUpOffset - 0.1f);
+            pos += Vector3.up * extraUp;
+            if (!useSpawnRotation) rot = Quaternion.identity;
+            SafeSnapToGround(ref pos);
+            return;
+        }
+
+        int count = sm.points.Length;
+        int idx = 0;
+        switch (selectionMode)
+        {
+            case SelectionMode.Random:
+                idx = UnityEngine.Random.Range(0, count);
+                break;
+            case SelectionMode.ByClientId:
+                idx = (int)(OwnerClientId % (ulong)count);
+                break;
+        }
+
+        var t = sm.points[idx];
+        if (t == null)
+        {
+            SafeSnapToGround(ref pos);
+            return;
+        }
+
+        pos = t.position + Vector3.up * Mathf.Max(0.1f, spawnUpOffset);
+        rot = useSpawnRotation ? t.rotation : Quaternion.identity;
+
+        SafeSnapToGround(ref pos);
+    }
+
+    private void SafeSnapToGround(ref Vector3 pos)
+    {
+        if (!groundSnap) return;
+
+        Vector3 origin = pos + Vector3.up * Mathf.Max(0.01f, groundRaycastUp);
+        if (Physics.Raycast(origin, Vector3.down, out var hit, Mathf.Max(groundRaycastDown, spawnUpOffset + 2f), ~0, QueryTriggerInteraction.Ignore))
+        {
+            pos = hit.point + Vector3.up * Mathf.Max(0.1f, spawnUpOffset);
+        }
     }
 }

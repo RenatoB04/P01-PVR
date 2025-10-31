@@ -4,20 +4,21 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using static UnityEngine.Time;
-using Unity.Netcode; // --- ALTERAÇÃO 1: Precisamos disto ---
+using Unity.Netcode;
+using System;
 
-public class Weapon : NetworkBehaviour // --- ALTERAÇÃO 2: Mudámos de MonoBehaviour ---
+public class Weapon : NetworkBehaviour
 {
     [Header("Refs")]
     public Transform firePoint;
     [SerializeField] GameObject bulletPrefab;
     [SerializeField] Transform cam;
-    [SerializeField] ParticleSystem muzzleFlash;   // VFX
-    [SerializeField] AudioSource fireAudio;        // SFX
+    [SerializeField] ParticleSystem muzzleFlash;
+    [SerializeField] AudioSource fireAudio;
 
     [Header("Input")]
     [SerializeField] InputActionReference shootAction;
-    [SerializeField] InputActionReference reloadAction;   // ⬅ reload
+    [SerializeField] InputActionReference reloadAction;
 
     [Header("Settings (fallbacks se não houver config)")]
     [SerializeField] float bulletSpeed = 40f;
@@ -26,21 +27,21 @@ public class Weapon : NetworkBehaviour // --- ALTERAÇÃO 2: Mudámos de MonoBeh
 
     [Header("Behaviour")]
     [Tooltip("Player: TRUE (só dispara com WeaponConfig). Bot: FALSE (usa campos locais).")]
-    [SerializeField] bool requireConfigForFire = true;   // Player=TRUE, Bots=FALSE
+    [SerializeField] bool requireConfigForFire = true;
 
-    [Header("HUD")]
-    [SerializeField] AmmoUI ammoUI;  // ⬅ liga no Canvas
+    [Header("HUD (Ligado Automaticamente)")]
+    [HideInInspector] public AmmoUI ammoUI;
 
-    // Auto-config
+    // --- Componentes Internos ---
     WeaponConfig[] allConfigs;
     WeaponConfig activeConfig;
     Component weaponSwitcher;
-
-    // Estado de tiro
-    float nextFireTimeUnscaled;
     CharacterController playerCC;
+    private bool isBot = false;
+    private Health ownerHealth; // Para guardar a referência ao nosso Health
 
-    // ---- AMMO/RELOAD (apenas para Player) ----
+    // --- Estado de Tiro ---
+    float nextTimeUnscaled;
     class AmmoState { public int inMag; public int reserve; }
     readonly Dictionary<WeaponConfig, AmmoState> ammoByConfig = new();
     int currentAmmo, reserveAmmo;
@@ -48,122 +49,144 @@ public class Weapon : NetworkBehaviour // --- ALTERAÇÃO 2: Mudámos de MonoBeh
 
     void Awake()
     {
-        // CORREÇÃO DA CÂMARA (uso da referência estável)
         if (!cam)
         {
-            if (FP_Controller_IS.PlayerCameraRoot != null)
-            {
-                cam = FP_Controller_IS.PlayerCameraRoot;
-            }
-            else if (Camera.main)
-            {
-                cam = Camera.main.transform;
-            }
+            if (FP_Controller_IS.PlayerCameraRoot != null) cam = FP_Controller_IS.PlayerCameraRoot;
+            else if (Camera.main) cam = Camera.main.transform;
         }
-
         playerCC = GetComponentInParent<CharacterController>();
-
+        
+        // Procura o Health no "root" (no objeto Player principal)
+        ownerHealth = GetComponentInParent<Health>(); 
+        if (ownerHealth == null && requireConfigForFire)
+        {
+             Debug.LogError($"Weapon.cs (Awake): Não foi possível encontrar o script 'Health' no pai. A bala não terá equipa.");
+        }
+        
         if (GetComponentInParent<BotCombat>() != null)
+        {
             requireConfigForFire = false;
-
+            isBot = true;
+        }
         allConfigs = GetComponentsInChildren<WeaponConfig>(true);
         weaponSwitcher = GetComponent<WeaponSwitcher>();
-
-        RefreshActiveConfig(applyImmediately: true);
-        UpdateHUD();
     }
 
-    void OnEnable()
+    void Start()
     {
-        // --- ALTERAÇÃO 3: Só o "dono" pode ligar os inputs ---
-        if (IsOwner == false) return;
-        // --- FIM DA ALTERAÇÃO ---
+        if (isBot)
+        {
+            EnableInputsAndHUD(true);
+        }
+    }
 
-        // Garante que o Input está ligado quando a arma está ativa
-        if (shootAction) shootAction.action.Enable();
-        if (reloadAction) reloadAction.action.Enable();
-
-        // Reset de emergência do estado da arma (limpa cooldown e isReloading)
-        ResetWeaponState();
+    // --- Lógica de Rede ---
+    public override void OnNetworkSpawn()
+    {
+        if (!IsOwner && !isBot)
+        {
+            EnableInputsAndHUD(false); // Desliga inputs
+            this.enabled = false; // Desliga o script
+            return;
+        }
+        
+        StartCoroutine(FindUIRefresh());
+    }
+    
+    private IEnumerator FindUIRefresh()
+    {
+        GameObject ammoTextObj = null;
+        if (requireConfigForFire)
+        {
+            ammoTextObj = GameObject.FindWithTag("AmmoText");
+            while (ammoTextObj == null)
+            {
+                yield return null; // Espera 1 frame
+                ammoTextObj = GameObject.FindWithTag("AmmoText");
+            }
+            try
+            {
+                ammoUI = ammoTextObj.GetComponent<AmmoUI>();
+            }
+            catch(Exception e)
+            {
+                Debug.LogError("Weapon.cs: Objeto 'AmmoText' encontrado, mas falta o script 'AmmoUI.cs'. Erro: " + e.Message);
+            }
+        }
+        EnableInputsAndHUD(true);
+    }
+    
+    void EnableInputsAndHUD(bool enabled)
+    {
+        if (enabled)
+        {
+            if (shootAction) shootAction.action.Enable();
+            if (reloadAction) reloadAction.action.Enable();
+            ResetWeaponState();
+            RefreshActiveConfig(applyImmediately: true);
+        }
+        else
+        {
+            if (shootAction) shootAction.action.Disable();
+            if (reloadAction) reloadAction.action.Disable();
+        }
     }
 
     void OnDisable()
     {
-        // guarda munição atual no dicionário quando a arma sair de ativa
-        if (requireConfigForFire && activeConfig && ammoByConfig.ContainsKey(activeConfig))
+        if (IsOwner || isBot)
         {
-            ammoByConfig[activeConfig].inMag = currentAmmo;
-            ammoByConfig[activeConfig].reserve = reserveAmmo;
+            if (requireConfigForFire && activeConfig && ammoByConfig.ContainsKey(activeConfig))
+            {
+                ammoByConfig[activeConfig].inMag = currentAmmo;
+                ammoByConfig[activeConfig].reserve = reserveAmmo;
+            }
+            EnableInputsAndHUD(false);
+            isReloading = false;
+            StopAllCoroutines();
         }
-
-        // desativa inputs
-        if (shootAction) shootAction.action.Disable();
-        if (reloadAction) reloadAction.action.Disable();
-
-        isReloading = false;
-        StopAllCoroutines();
     }
 
-    // MÉTODO DE EMERGÊNCIA (Reset de estado)
     public void ResetWeaponState()
     {
-        nextFireTimeUnscaled = Time.unscaledTime;
+        nextTimeUnscaled = Time.unscaledTime;
         isReloading = false;
         StopAllCoroutines();
     }
 
     void Update()
     {
-        // --- ALTERAÇÃO 4: Só o "dono" pode ler inputs de arma ---
-        if (IsOwner == false) return;
-        // --- FIM DA ALTERAÇÃO ---
-
-        if (activeConfig == null)
-            RefreshActiveConfig(applyImmediately: true);
-
+        RefreshActiveConfig(applyImmediately: true);
         if (requireConfigForFire && activeConfig == null) return;
 
-        // CORREÇÃO CRÍTICA: Se o input for NULL (perdido), tentamos forçar o enable
-        if (shootAction != null && !shootAction.action.enabled)
+        // BLOQUEIO: não permitir input enquanto morto
+        bool isDead = ownerHealth && ownerHealth.isDead.Value;
+        if (isDead)
         {
-            shootAction.action.Enable();
+            if (shootAction && shootAction.action.enabled) shootAction.action.Disable();
+            if (reloadAction && reloadAction.action.enabled) reloadAction.action.Disable();
+            return;
+        }
+        else
+        {
+            if (shootAction != null && !shootAction.action.enabled) shootAction.action.Enable();
+            if (reloadAction != null && !reloadAction.action.enabled) reloadAction.action.Enable();
         }
 
-        // 1. INPUT DE RECARGA MANUAL
-        if (requireConfigForFire && reloadAction && reloadAction.action.WasPressedThisFrame())
-        {
-            TryReload();
-        }
-
-        // 2. CORREÇÃO DE BLOQUEIO E AUTO-RELOAD FORÇADO: 
-        if (requireConfigForFire && currentAmmo <= 0 && reserveAmmo > 0 && !isReloading)
-        {
-            TryReload();
-        }
-
-        // Bloqueia o tiro durante a recarga
+        if (requireConfigForFire && reloadAction && reloadAction.action.WasPressedThisFrame()) TryReload();
+        if (requireConfigForFire && currentAmmo <= 0 && reserveAmmo > 0 && !isReloading) TryReload();
         if (isReloading) return;
 
         bool automatic = activeConfig ? activeConfig.automatic : false;
-        float useFireRate = activeConfig ? activeConfig.fireRate : fireRate;
+        float useFireRate = activeConfig ? activeConfig.fireRate : this.fireRate;
+        bool wantsShoot = shootAction != null && (automatic ? shootAction.action.IsPressed() : shootAction.action.WasPressedThisFrame());
 
-        // CRÍTICO: Não use shootAction.action.IsPressed() se for nulo!
-        bool wantsShoot = shootAction != null && (automatic
-            ? shootAction.action.IsPressed()
-            : shootAction.action.WasPressedThisFrame());
+        if (!wantsShoot || Time.unscaledTime < nextTimeUnscaled) return;
 
-        // Verifica o cooldown usando tempo NÃO ESCALADO
-        if (!wantsShoot || Time.unscaledTime < nextFireTimeUnscaled)
-        {
-            return;
-        }
-
-        // 3. Lógica de Disparo
         if (requireConfigForFire)
         {
             if (currentAmmo <= 0)
             {
-                // Toca som seco (chega aqui se TryReload() falhou ou reserva está a 0)
                 if (fireAudio && activeConfig && activeConfig.emptyClickSfx)
                     fireAudio.PlayOneShot(activeConfig.emptyClickSfx);
                 return;
@@ -172,70 +195,75 @@ public class Weapon : NetworkBehaviour // --- ALTERAÇÃO 2: Mudámos de MonoBeh
         }
 
         Shoot();
-
-        // Define o novo cooldown usando tempo NÃO ESCALADO
-        nextFireTimeUnscaled = Time.unscaledTime + useFireRate;
-
+        nextTimeUnscaled = Time.unscaledTime + useFireRate;
         if (requireConfigForFire)
         {
             UpdateHUD();
-            // Verifica Auto-Reload *após* o tiro ter esvaziado o carregador
             if (currentAmmo == 0 && reserveAmmo > 0) TryReload();
         }
     }
 
-    // Chamado pelos bots
+    // Agora permite bots chamarem sem exigir config; apenas controla munição quando necessário
     public void ShootExternally()
     {
-        // (Este método não precisa da verificação IsOwner,
-        // porque só é chamado pelo BotCombat, que já está no servidor/bot)
-
         if (requireConfigForFire && activeConfig == null) return;
 
-        float useFireRate = activeConfig ? activeConfig.fireRate : fireRate;
+        // BLOQUEIO: não atirar enquanto morto
+        if (ownerHealth && ownerHealth.isDead.Value) return;
 
-        // CRÍTICO: Bots também usam tempo não escalado
-        if (Time.unscaledTime >= nextFireTimeUnscaled)
+        float useFireRate = activeConfig ? activeConfig.fireRate : this.fireRate;
+        if (Time.unscaledTime >= nextTimeUnscaled)
         {
+            if (requireConfigForFire)
+            {
+                if (currentAmmo <= 0) return;
+                currentAmmo--;
+            }
+
             Shoot();
-            nextFireTimeUnscaled = Time.time + useFireRate; // <-- CORREÇÃO DE BUG: Deve ser Time.time, ou unscaledTime? O teu original estava unscaled. Vou manter.
+            nextTimeUnscaled = Time.unscaledTime + useFireRate;
+
+            if (requireConfigForFire)
+            {
+                UpdateHUD();
+                if (currentAmmo == 0 && reserveAmmo > 0) TryReload();
+            }
         }
     }
-
+    
     void Shoot()
     {
         if (requireConfigForFire && activeConfig == null) return;
-
         Transform useFP = activeConfig ? activeConfig.firePoint : firePoint;
         GameObject useBullet = activeConfig ? activeConfig.bulletPrefab : bulletPrefab;
         ParticleSystem useMuzzle = activeConfig ? activeConfig.muzzleFlashPrefab : muzzleFlash;
-        float useSpeed = activeConfig ? activeConfig.bulletSpeed : bulletSpeed;
-        float useMaxDist = activeConfig ? activeConfig.maxAimDistance : maxAimDistance;
+        float useSpeed = activeConfig ? activeConfig.bulletSpeed : this.bulletSpeed;
+        float useMaxDist = activeConfig ? activeConfig.maxAimDistance : this.maxAimDistance;
 
-        if (!useBullet || !useFP) return;
+        if (!useBullet || !useFP)
+        {
+            Debug.LogError($"{name}/Weapon.Shoot: firePoint ou bulletPrefab nulos. activeConfig={(activeConfig ? activeConfig.name : "null")}");
+            return;
+        }
+        if (cam == null) cam = useFP;
 
         Vector3 dir;
-        Ray ray = new Ray(cam ? cam.position : useFP.position, cam ? cam.forward : useFP.forward);
+        Ray ray = new Ray(cam.position, cam.forward);
         if (Physics.Raycast(ray, out var hit, useMaxDist, ~0, QueryTriggerInteraction.Ignore))
             dir = (hit.point - useFP.position).normalized;
         else
             dir = (ray.GetPoint(useMaxDist) - useFP.position).normalized;
 
-        var bullet = Instantiate(useBullet, useFP.position, Quaternion.LookRotation(dir));
-        bullet.transform.position += dir * 0.2f;
+        Vector3 spawnPos = useFP.position + dir * 0.2f;
 
-        if (bullet.TryGetComponent<Rigidbody>(out var rb))
-        {
-            rb.linearVelocity = dir * useSpeed;
-        }
+        // Spawn do projétil no SERVIDOR (autoritário)
+        int shooterTeam = ownerHealth ? ownerHealth.team.Value : -1;
+        ulong shooterClientId = IsOwner ? OwnerClientId : ulong.MaxValue;
+        float speedToSend = useSpeed;
 
-        if (bullet.TryGetComponent<BulletProjectile>(out var bp))
-        {
-            var h = GetComponentInParent<Health>();
-            if (h) bp.ownerTeam = h.team;
-            bp.ownerRoot = h ? h.transform.root : transform.root;
-        }
+        SpawnBulletServerRpc(spawnPos, dir, speedToSend, shooterTeam, shooterClientId);
 
+        // FX locais (responsividade)
         if (useMuzzle)
         {
             var fx = Instantiate(useMuzzle, useFP.position, useFP.rotation, useFP);
@@ -244,41 +272,100 @@ public class Weapon : NetworkBehaviour // --- ALTERAÇÃO 2: Mudámos de MonoBeh
         }
 
         var fireClip = activeConfig ? activeConfig.fireSfx : null;
-        if (fireAudio && fireClip) fireAudio.PlayOneShot(fireAudio.clip);
+        if (fireAudio && fireClip) fireAudio.PlayOneShot(fireClip);
         else if (fireAudio && fireAudio.clip) fireAudio.PlayOneShot(fireAudio.clip);
 
         CrosshairUI.Instance?.Kick();
     }
 
-    // NOVO: Adiciona munição de reserva (para Pickups)
-    public void AddReserveAmmo(int amount)
+    // Resolve e valida o prefab no contexto do SERVIDOR (mesma instância de Weapon no server)
+    private GameObject ResolveBulletPrefabServer(out string reasonIfInvalid)
     {
-        if (!requireConfigForFire || activeConfig == null) return;
-        if (amount <= 0) return;
+        reasonIfInvalid = null;
 
-        int bulletsToAdd = amount * activeConfig.magSize;
-        reserveAmmo += bulletsToAdd;
+        GameObject prefab = activeConfig && activeConfig.bulletPrefab
+            ? activeConfig.bulletPrefab
+            : bulletPrefab;
 
-        // 🟢 Sincroniza o novo valor no dicionário de munição da arma ativa
-        if (ammoByConfig.ContainsKey(activeConfig))
-            ammoByConfig[activeConfig].reserve = reserveAmmo;
+        if (prefab == null)
+        {
+            reasonIfInvalid = "bulletPrefab está nulo (nem em activeConfig, nem no campo do Weapon).";
+            return null;
+        }
 
-        UpdateHUD();
+        // Tem de estar no ROOT do prefab
+        var rootNO = prefab.GetComponent<NetworkObject>();
+        if (rootNO == null)
+        {
+            var childNO = prefab.GetComponentInChildren<NetworkObject>(true);
+            if (childNO != null)
+                reasonIfInvalid = $"Prefab '{prefab.name}' tem NetworkObject num filho ('{childNO.name}'). O NetworkObject TEM de estar no ROOT do prefab.";
+            else
+                reasonIfInvalid = $"Prefab '{prefab.name}' não tem NetworkObject. Adiciona NetworkObject no root e regista nos Network Prefabs.";
+            return null;
+        }
 
-        // Auto-reload se estiver vazia
-        if (currentAmmo == 0)
-            TryReload();
+        return prefab;
     }
 
+    [ServerRpc(RequireOwnership = false)]
+    private void SpawnBulletServerRpc(Vector3 position, Vector3 direction, float speed, int shooterTeam, ulong shooterClientId)
+    {
+        string invalidReason;
+        var prefab = ResolveBulletPrefabServer(out invalidReason);
+        if (prefab == null)
+        {
+            Debug.LogError($"Weapon.SpawnBulletServerRpc: Prefab do projétil inválido. Motivo: {invalidReason} | activeConfig={(activeConfig ? activeConfig.name : "null")} | weaponGO={name}");
+            return;
+        }
 
-    // ---------- AMMO / RELOAD ----------
+        var bullet = Instantiate(prefab, position, Quaternion.LookRotation(direction));
+
+        if (bullet.TryGetComponent<Rigidbody>(out var rb))
+            rb.linearVelocity = direction * speed;
+
+        if (bullet.TryGetComponent<BulletProjectile>(out var bp))
+        {
+            bp.ownerTeam = shooterTeam;
+            bp.ownerRoot = transform.root;              // raiz do atirador no servidor
+            bp.ownerClientId = shooterClientId;         // para hitmarker direcionado
+            // Enviar velocidade inicial para os clientes aplicarem no OnNetworkSpawn
+            bp.initialVelocity.Value = direction * speed;
+        }
+
+        var no = bullet.GetComponent<NetworkObject>();
+        if (no != null)
+        {
+            try
+            {
+                no.Spawn(true);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"Weapon.SpawnBulletServerRpc: Falha ao Spawn do NetworkObject do prefab '{prefab.name}'. " +
+                               $"Confere se está registado no NetworkManager > Network Prefabs. Ex: {ex.Message}");
+                Destroy(bullet);
+            }
+        }
+        else
+        {
+            Debug.LogError($"Weapon.SpawnBulletServerRpc: Prefab do projétil não tem NetworkObject no ROOT! Prefab='{prefab.name}'");
+            Destroy(bullet);
+        }
+    }
+
+    public void AddReserveAmmo(int amount)
+    {
+        if (!requireConfigForFire || activeConfig == null || amount <= 0) return;
+        reserveAmmo = Mathf.Max(0, reserveAmmo + amount);
+        UpdateHUD();
+        if (currentAmmo == 0) TryReload();
+    }
+
     void TryReload()
     {
         if (!requireConfigForFire || activeConfig == null) return;
-        if (isReloading) return;
-        if (currentAmmo >= activeConfig.magSize) return;
-        if (reserveAmmo <= 0) return;
-
+        if (isReloading || currentAmmo >= activeConfig.magSize || reserveAmmo <= 0) return;
         StopAllCoroutines();
         StartCoroutine(ReloadRoutine());
     }
@@ -286,28 +373,25 @@ public class Weapon : NetworkBehaviour // --- ALTERAÇÃO 2: Mudámos de MonoBeh
     IEnumerator ReloadRoutine()
     {
         isReloading = true;
-
         if (fireAudio && activeConfig && activeConfig.reloadSfx)
             fireAudio.PlayOneShot(activeConfig.reloadSfx);
-
         yield return new WaitForSecondsRealtime(activeConfig.reloadTime);
-
         int needed = activeConfig.magSize - currentAmmo;
         int toLoad = Mathf.Min(needed, reserveAmmo);
         currentAmmo += toLoad;
         reserveAmmo -= toLoad;
-
         isReloading = false;
         UpdateHUD();
     }
 
-    void UpdateHUD()
+    public void UpdateHUD()
     {
-        if (!requireConfigForFire) return;
-        ammoUI?.Set(currentAmmo, reserveAmmo);
+        if (requireConfigForFire && ammoUI != null)
+        {
+            ammoUI.Set(currentAmmo, reserveAmmo);
+        }
     }
 
-    // ---------- helpers ----------
     public void SetActiveWeapon(GameObject weaponGO)
     {
         activeConfig = weaponGO ? weaponGO.GetComponent<WeaponConfig>() : null;
@@ -317,20 +401,12 @@ public class Weapon : NetworkBehaviour // --- ALTERAÇÃO 2: Mudámos de MonoBeh
     void RefreshActiveConfig(bool applyImmediately)
     {
         var newCfg = FindActiveConfig();
-
-        // Se o novo config for nulo, sai
-        if (newCfg == null) return;
-
-        // 🔒 se é o mesmo config, não mexe
         if (newCfg == activeConfig) return;
-
-        // Troca de config apenas se mudou realmente
         activeConfig = newCfg;
         isReloading = false;
-
+        
         if (applyImmediately && activeConfig != null)
         {
-            // aplicar valores de tiro
             firePoint = activeConfig.firePoint ?? firePoint;
             bulletPrefab = activeConfig.bulletPrefab ?? bulletPrefab;
             muzzleFlash = activeConfig.muzzleFlashPrefab ?? muzzleFlash;
@@ -338,7 +414,6 @@ public class Weapon : NetworkBehaviour // --- ALTERAÇÃO 2: Mudámos de MonoBeh
             fireRate = activeConfig.fireRate;
             maxAimDistance = activeConfig.maxAimDistance;
 
-            // inicializar/recuperar munição deste arma
             if (!ammoByConfig.TryGetValue(activeConfig, out var st))
             {
                 st = new AmmoState
@@ -352,62 +427,29 @@ public class Weapon : NetworkBehaviour // --- ALTERAÇÃO 2: Mudámos de MonoBeh
             reserveAmmo = st.reserve;
             UpdateHUD();
         }
-
+        
         if (applyImmediately && activeConfig == null)
         {
-            ammoUI?.Clear();
+            if (ammoUI != null) ammoUI.Clear();
         }
     }
 
     WeaponConfig FindActiveConfig()
     {
         if (allConfigs == null || allConfigs.Length == 0) return null;
-
-        // 1) via WeaponSwitcher.GetActiveWeapon() se existir
         if (weaponSwitcher != null)
         {
-            // CORREÇÃO: GetMethod("GetActiveWeapon") falha em builds.
-            // Vamos assumir que é um WeaponSwitcher e chamar diretamente.
-            if (weaponSwitcher is WeaponSwitcher sw)
+            var mi = weaponSwitcher.GetType().GetMethod("GetActiveWeapon",
+                     BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            if (mi != null)
             {
-                var go = sw.GetActiveWeapon();
+                var go = mi.Invoke(weaponSwitcher, null) as GameObject;
                 if (go) return go.GetComponent<WeaponConfig>();
             }
         }
-
-        // 2) primeira arma ativa com config
         foreach (var cfg in allConfigs)
             if (cfg && cfg.gameObject.activeInHierarchy)
                 return cfg;
-
         return null;
-    }
-
-    // --- MÉTODOS PÚBLICOS PARA O BOT (Task 4) ---
-    // (Podes manter estes se o teu BotCombat os usar, 
-    // ou apagá-los se o BotCombat aceder diretamente às variáveis públicas)
-
-    public int GetCurrentAmmo()
-    {
-        return currentAmmo;
-    }
-
-    public int GetReserveAmmo()
-    {
-        return reserveAmmo;
-    }
-
-    public bool IsCurrentlyReloading()
-    {
-        return isReloading;
-    }
-
-    public int GetActiveWeaponMagSize()
-    {
-        if (activeConfig != null)
-        {
-            return activeConfig.magSize;
-        }
-        return 0;
     }
 }

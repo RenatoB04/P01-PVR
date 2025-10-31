@@ -1,106 +1,234 @@
 using UnityEngine;
 using UnityEngine.Events;
 using TMPro;
-using System; 
+using System;
+using Unity.Netcode;
+using System.Collections;
 
-public class Health : MonoBehaviour
+public class Health : NetworkBehaviour
 {
     [Header("Config")]
     public float maxHealth = 100f;
-    public int team = -1; // -1 = neutro; 0 = jogador; 1 = bots
 
-    [Header("Runtime")]
-    public float currentHealth;
-    public bool isDead;
+    public NetworkVariable<float> currentHealth = new NetworkVariable<float>(
+        100f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+    public NetworkVariable<bool> isDead = new NetworkVariable<bool>(
+        false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+    public NetworkVariable<int> team = new NetworkVariable<int>(
+        -1, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
     [Header("Events")]
-    public UnityEvent<float, float> OnHealthChanged; 
+    public UnityEvent<float, float> OnHealthChanged;
     public UnityEvent OnDied;
-    
-    // EVENTO NECESSÁRIO: Dispara quando o dano é aplicado (para IA)
     public event Action<float, Transform> OnTookDamage;
 
     [Header("UI (Opcional)")]
-    public TextMeshProUGUI healthText; // texto hp UI
+    [HideInInspector] public TextMeshProUGUI healthText;
+
+    // Scoring
+    private ulong lastInstigatorClientId = ulong.MaxValue;
+    private Coroutine uiFinderCo;
 
     void Awake()
     {
-        currentHealth = maxHealth;
-        isDead = false;
-        UpdateHealthUI();
-        OnHealthChanged?.Invoke(currentHealth, maxHealth);
+        UpdateHealthUI(maxHealth);
     }
 
-    // ------------------ DANO ------------------
-
-    public void TakeDamage(float amount, int instigatorTeam = -1)
+    public override void OnNetworkSpawn()
     {
-        InternalApplyDamage(amount, instigatorTeam, null, Vector3.zero, hasSource: false);
-    }
-
-    public void TakeDamageFrom(float amount, int instigatorTeam, Transform attacker, Vector3 hitWorldPos)
-    {
-        InternalApplyDamage(amount, instigatorTeam, attacker, hitWorldPos, hasSource: true);
-    }
-
-    void InternalApplyDamage(float amount, int instigatorTeam, Transform attacker, Vector3 hitWorldPos, bool hasSource)
-    {
-        if (isDead) return;
-
-        // Evita friendly fire
-        if (team != -1 && instigatorTeam != -1 && team == instigatorTeam)
-            return;
-
-        float oldHealth = currentHealth;
-        currentHealth = Mathf.Max(0, currentHealth - amount);
-
-        // Dispara o evento de dano ANTES de morrer, se a vida realmente diminuiu
-        if (currentHealth < oldHealth)
+        if (IsServer)
         {
-            // CRÍTICO: Dispara o evento de DANO para o BotAI
-            OnTookDamage?.Invoke(amount, attacker);
+            currentHealth.Value = maxHealth;
+            isDead.Value = false;
+            if (team.Value == -1)
+                team.Value = (int)OwnerClientId;
         }
 
-        UpdateHealthUI();
-        OnHealthChanged?.Invoke(currentHealth, maxHealth);
+        currentHealth.OnValueChanged += OnHealthValueChanged;
+        isDead.OnValueChanged += OnIsDeadChanged;
 
-        // Mostra Damage Indicator apenas no jogador local (team == 1)
-        if (team == 1 && DamageIndicatorUI.Instance && hasSource && currentHealth < oldHealth)
+        UpdateHealthUI(currentHealth.Value);
+        OnHealthChanged?.Invoke(currentHealth.Value, maxHealth);
+
+        if (IsOwner)
+            uiFinderCo = StartCoroutine(FindUIRefresh());
+    }
+
+    private IEnumerator FindUIRefresh()
+    {
+        const int safetyFrames = 600;
+        int frames = 0;
+        GameObject healthTextObj = null;
+
+        while (healthTextObj == null && frames < safetyFrames)
         {
-            Vector3 source = attacker ? attacker.position : hitWorldPos;
-            DamageIndicatorUI.Instance.RegisterHit(source, amount);
+            yield return null;
+            frames++;
+            healthTextObj = GameObject.FindWithTag("HealthText");
+            if (healthTextObj == null)
+            {
+                var byName = GameObject.Find("HealthText");
+                if (byName && byName.GetComponent<TextMeshProUGUI>() != null)
+                    healthTextObj = byName;
+            }
         }
 
-        if (currentHealth <= 0 && !isDead)
+        if (healthTextObj != null)
         {
-            isDead = true;
+            healthText = healthTextObj.GetComponent<TextMeshProUGUI>();
+            UpdateHealthUI(currentHealth.Value);
+        }
+        else
+        {
+            Debug.LogWarning($"{name}/Health: Não encontrei UI 'HealthText'.");
+        }
+
+        uiFinderCo = null;
+    }
+
+    public override void OnNetworkDespawn()
+    {
+        currentHealth.OnValueChanged -= OnHealthValueChanged;
+        isDead.OnValueChanged -= OnIsDeadChanged;
+
+        if (uiFinderCo != null) { StopCoroutine(uiFinderCo); uiFinderCo = null; }
+    }
+
+    private void OnHealthValueChanged(float prev, float curr)
+    {
+        Debug.Log($"[Health] {name} HP: {prev:0} -> {curr:0}");
+        UpdateHealthUI(curr);
+        OnHealthChanged?.Invoke(curr, maxHealth);
+    }
+
+    private void OnIsDeadChanged(bool prev, bool curr)
+    {
+        Debug.Log($"[Health] {name} isDead: {prev} -> {curr}");
+        if (curr && !prev)
             OnDied?.Invoke();
+    }
+
+    // -------- API pública (compatível) --------
+
+    // Cliente pode chamar (ex.: explosão local) → vai ao servidor via RPC
+    public void TakeDamage(float amount, int instigatorTeam = -1, ulong instigatorClientId = ulong.MaxValue)
+        => TakeDamageServerRpc(amount, instigatorTeam, instigatorClientId, Vector3.zero, false);
+
+    // Usado por projéteis: inclui posição e sinaliza para UI de direção
+    public void TakeDamageFrom(float amount, int instigatorTeam, Transform attacker, Vector3 hitWorldPos, ulong instigatorClientId = ulong.MaxValue)
+        => TakeDamageServerRpc(amount, instigatorTeam, instigatorClientId, attacker ? attacker.position : hitWorldPos, true);
+
+    // -------- Núcleo server-authoritative --------
+
+    // Chamada directa pelo SERVIDOR (p.ex. pela bala)
+    public void ApplyDamageServer(float amount, int instigatorTeam, ulong instigatorClientId, Vector3 hitWorldPos, bool showIndicator = true)
+    {
+        if (!IsServer) return;
+        if (isDead.Value) return;
+
+        amount = Mathf.Clamp(amount, 0f, maxHealth * 2f);
+        if (amount <= 0f) return;
+
+        // Friendly fire
+        if (team.Value != -1 && instigatorTeam != -1 && team.Value == instigatorTeam)
+        {
+            Debug.Log($"[Health] FF ignorado em {name}. team={team.Value}, instigatorTeam={instigatorTeam}");
+            return;
+        }
+
+        lastInstigatorClientId = instigatorClientId;
+
+        float old = currentHealth.Value;
+        float next = Mathf.Max(0f, old - amount);
+        if (Mathf.Approximately(old, next)) return;
+
+        currentHealth.Value = next;
+        Debug.Log($"[Health] {name} levou {amount} de dano. Agora: {next:0}/{maxHealth:0}");
+
+        if (next < old)
+            OnTookDamage?.Invoke(amount, null);
+
+        // Feedback no alvo (só para o dono, via ClientRpc dirigido)
+        if (showIndicator)
+        {
+            var target = new ClientRpcParams
+            {
+                Send = new ClientRpcSendParams { TargetClientIds = new[] { OwnerClientId } }
+            };
+            DamageIndicatorClientRpc(hitWorldPos, target);
+        }
+
+        if (next <= 0f && !isDead.Value)
+        {
+            isDead.Value = true;
+            Debug.Log($"[Health] {name} morreu. isDead=true");
+            TryAwardKillToLastInstigator();
         }
     }
 
-    // ------------------ CURA / RESET ------------------
+    // Entrada RPC para clientes chamarem dano
+    [ServerRpc(RequireOwnership = false)]
+    private void TakeDamageServerRpc(float amount, int instigatorTeam, ulong instigatorClientId, Vector3 hitWorldPos, bool showIndicator)
+    {
+        ApplyDamageServer(amount, instigatorTeam, instigatorClientId, hitWorldPos, showIndicator);
+    }
 
+    [ClientRpc]
+    private void DamageIndicatorClientRpc(Vector3 sourceWorldPos, ClientRpcParams rpcParams = default)
+    {
+        if (!IsOwner) return;
+        if (DamageIndicatorUI.Instance)
+            DamageIndicatorUI.Instance.RegisterHit(sourceWorldPos, 0f);
+    }
+
+    private void TryAwardKillToLastInstigator()
+    {
+        if (!IsServer) return;
+        if (lastInstigatorClientId == ulong.MaxValue) return;
+        if (lastInstigatorClientId == OwnerClientId) return; // suicídio: sem pontos
+
+        if (NetworkManager.Singleton != null &&
+            NetworkManager.Singleton.ConnectedClients.TryGetValue(lastInstigatorClientId, out var client) &&
+            client != null && client.PlayerObject != null)
+        {
+            var ps = client.PlayerObject.GetComponent<PlayerScore>();
+            if (ps != null) ps.AwardKillAndPoints();
+        }
+
+        lastInstigatorClientId = ulong.MaxValue;
+    }
+
+    // -------- Cura/Reset --------
     public void Heal(float amount)
     {
-        if (isDead) return;
-        currentHealth = Mathf.Min(maxHealth, currentHealth + amount);
-        UpdateHealthUI();
-        OnHealthChanged?.Invoke(currentHealth, maxHealth);
+        if (isDead.Value) return;
+        HealServerRpc(amount);
     }
 
-    public void ResetFullHealth()
+    [ServerRpc(RequireOwnership = false)]
+    private void HealServerRpc(float amount)
     {
-        isDead = false;
-        currentHealth = maxHealth;
-        UpdateHealthUI();
-        OnHealthChanged?.Invoke(currentHealth, maxHealth);
+        if (isDead.Value) return;
+        amount = Mathf.Clamp(amount, 0f, maxHealth * 2f);
+        if (amount <= 0f) return;
+
+        currentHealth.Value = Mathf.Min(maxHealth, currentHealth.Value + amount);
     }
 
-    // ------------------ UI ------------------
+    public void ResetFullHealth() => ResetHealthServerRpc();
 
-    void UpdateHealthUI()
+    [ServerRpc(RequireOwnership = false)]
+    private void ResetHealthServerRpc()
+    {
+        isDead.Value = false;
+        currentHealth.Value = maxHealth;
+        Debug.Log($"[Health] {name} reset para {maxHealth} HP e isDead=false");
+    }
+
+    // -------- UI --------
+    public void UpdateHealthUI(float v)
     {
         if (healthText != null)
-            healthText.text = $"HP: {currentHealth}/{maxHealth}";
+            healthText.text = $"HP: {v:0}/{maxHealth:0}";
     }
 }
