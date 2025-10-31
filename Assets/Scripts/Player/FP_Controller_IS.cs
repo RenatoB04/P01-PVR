@@ -1,16 +1,22 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using Unity.Netcode;
 
 [RequireComponent(typeof(CharacterController))]
-public class FP_Controller_IS : MonoBehaviour
+[RequireComponent(typeof(PlayerInput))]
+public class FP_Controller_IS : NetworkBehaviour
 {
-    // NOVO: Referência pública estática para a câmara (Acesso estável)
     public static Transform PlayerCameraRoot { get; private set; }
 
     [Header("Refs")]
     [SerializeField] Transform cameraRoot;
     CharacterController cc;
     Animator animator;
+    PlayerInput playerInput;
+
+    [Header("Componentes de Rede (Ligar no Inspector)")]
+    [SerializeField] private Camera playerCamera;
+    [SerializeField] private AudioListener audioListener;
 
     [Header("Input Actions")]
     [SerializeField] InputActionReference move;
@@ -35,60 +41,134 @@ public class FP_Controller_IS : MonoBehaviour
 
     [Header("Câmara")]
     public float sens = 0.2f;
-    float xRot;
 
-    // estado
+    float xRot;
     Vector3 velocity;
     bool canJump = true;
     bool groundedPrev = true;
 
-    // crouch (TOGGLE)
     [Header("Crouch (Toggle)")]
     public float crouchHeight = 1.0f;
     public float crouchCamYOffset = -0.4f;
     public float crouchSmooth = 12f;
+
     float originalHeight;
     float cameraRootBaseY;
     float stepOffsetOriginal;
     bool isCrouching;
 
+    // --- NETWORK ---
+    public override void OnNetworkSpawn()
+    {
+        base.OnNetworkSpawn();
+
+        // refs
+        if (!playerInput) playerInput = GetComponent<PlayerInput>();
+        if (!cc) cc = GetComponent<CharacterController>();
+        if (!playerCamera) playerCamera = GetComponentInChildren<Camera>(true);
+        if (!audioListener) audioListener = GetComponentInChildren<AudioListener>(true);
+
+        // 1) SERVIDOR escolhe spawn e avisa o DONO (ClientRpc)
+        if (IsServer && SpawnsManager.I != null)
+        {
+            SpawnsManager.I.GetNext(out var pos, out var rot);
+
+            // server posiciona para os outros verem logo algo
+            if (cc) cc.enabled = false;
+            transform.SetPositionAndRotation(pos, rot);
+            if (cc) cc.enabled = true;
+
+            // manda ao dono aplicar localmente (client-authoritative)
+            var target = new ClientRpcParams
+            {
+                Send = new ClientRpcSendParams
+                {
+                    TargetClientIds = new ulong[] { OwnerClientId }
+                }
+            };
+            SetSpawnClientRpc(pos, rot, target);
+        }
+
+        // 2) Ativar/desativar componentes conforme ownership
+        ApplyOwnershipState(IsOwner);
+
+        if (IsOwner && cameraRoot != null)
+        {
+            PlayerCameraRoot = cameraRoot;
+            Cursor.lockState = CursorLockMode.Locked;
+            Cursor.visible = false;
+        }
+    }
+
+    public override void OnGainedOwnership()
+    {
+        ApplyOwnershipState(true);
+        if (cameraRoot) PlayerCameraRoot = cameraRoot;
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible = false;
+
+        // garantir que estamos no action map do jogador
+        if (playerInput && playerInput.actions != null)
+        {
+            var map = playerInput.actions.FindActionMap("Player", true);
+            if (map != null && playerInput.currentActionMap != map)
+                playerInput.SwitchCurrentActionMap("Player");
+        }
+    }
+
+    public override void OnLostOwnership()
+    {
+        ApplyOwnershipState(false);
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
+    }
+
+    void ApplyOwnershipState(bool owner)
+    {
+        if (playerCamera) playerCamera.enabled = owner;
+        if (audioListener) audioListener.enabled = owner;
+        if (playerInput) playerInput.enabled = owner;
+        // o CC pode ser reativado no Update caso algo o desligue
+        if (cc && owner && !cc.enabled) cc.enabled = true;
+        if (cc && !owner) cc.enabled = false;
+    }
+
     void Awake()
     {
         cc = GetComponent<CharacterController>();
         animator = GetComponentInChildren<Animator>();
+        playerInput = GetComponent<PlayerInput>();
 
-        // CRÍTICO: Define a referência estática para a Weapon
-        if (cameraRoot != null)
-        {
-            PlayerCameraRoot = cameraRoot;
-        }
+        if (!playerCamera) playerCamera = GetComponentInChildren<Camera>(true);
+        if (!audioListener) audioListener = GetComponentInChildren<AudioListener>(true);
 
         originalHeight = cc.height;
         stepOffsetOriginal = cc.stepOffset;
 
         if (cameraRoot) cameraRootBaseY = cameraRoot.localPosition.y;
-        else Debug.LogWarning("FP_Controller_IS: CameraRoot no Inspector.");
+        else Debug.LogWarning("FP_Controller_IS: Arrasta o CameraRoot no Inspector.");
 
+        // CC robusto
         cc.minMoveDistance = 0f;
         cc.slopeLimit = Mathf.Max(cc.slopeLimit, 45f);
         cc.stepOffset = Mathf.Max(cc.stepOffset, 0.3f);
-        
         isCrouching = false;
         cc.height = originalHeight;
         cc.center = new Vector3(0f, originalHeight * 0.5f, 0f);
         if (cameraRoot)
         {
-            var p = cameraRoot.localPosition;
-            p.y = cameraRootBaseY;
+            var p = cameraRoot.localPosition; p.y = cameraRootBaseY;
             cameraRoot.localPosition = p;
         }
     }
 
     void OnEnable()
     {
-        move.action.Enable();
-        look.action.Enable();
-        jump.action.Enable();
+        if (!IsOwner) return;
+
+        if (move) move.action.Enable();
+        if (look) look.action.Enable();
+        if (jump) jump.action.Enable();
         if (sprint) sprint.action.Enable();
         if (crouch) crouch.action.Enable();
 
@@ -98,33 +178,36 @@ public class FP_Controller_IS : MonoBehaviour
 
     void OnDisable()
     {
-        move.action.Disable();
-        look.action.Disable();
-        jump.action.Disable();
+        if (move) move.action.Disable();
+        if (look) look.action.Disable();
+        if (jump) jump.action.Disable();
         if (sprint) sprint.action.Disable();
         if (crouch) crouch.action.Disable();
 
-        Cursor.lockState = CursorLockMode.None;
-        Cursor.visible = true;
+        if (IsOwner)
+        {
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+        }
     }
 
     void Update()
     {
-        // -------- Olhar --------
-        Vector2 lookDelta = look.action.ReadValue<Vector2>();
+        if (!IsOwner) return;
+        // trava de segurança: se és o dono e o CC estiver desligado, volta a ligar
+        if (cc && !cc.enabled) cc.enabled = true;
+
+        // LOOK
+        Vector2 lookDelta = look ? look.action.ReadValue<Vector2>() : Vector2.zero;
         xRot = Mathf.Clamp(xRot - lookDelta.y * sens, -85f, 85f);
         if (cameraRoot) cameraRoot.localRotation = Quaternion.Euler(xRot, 0f, 0f);
         transform.Rotate(Vector3.up * (lookDelta.x * sens));
 
-        // -------- Crouch (TOGGLE) --------
-        if (crouch && crouch.action.WasPressedThisFrame())
-            isCrouching = !isCrouching;
-        
-        // if (!isCrouching && CabeçaBateNoTeto()) isCrouching = true;
+        // CROUCH toggle
+        if (crouch && crouch.action.WasPressedThisFrame()) isCrouching = !isCrouching;
 
-        float targetHeight  = isCrouching ? crouchHeight : originalHeight;
+        float targetHeight = isCrouching ? crouchHeight : originalHeight;
         float targetCenterY = targetHeight * 0.5f;
-
         cc.height = Mathf.Lerp(cc.height, targetHeight, Time.deltaTime * crouchSmooth);
         cc.center = Vector3.Lerp(cc.center, new Vector3(0f, targetCenterY, 0f), Time.deltaTime * crouchSmooth);
         cc.stepOffset = isCrouching ? 0.1f : stepOffsetOriginal;
@@ -137,16 +220,13 @@ public class FP_Controller_IS : MonoBehaviour
             cameraRoot.localPosition = camLocal;
         }
 
-        // -------- Movimento horizontal --------
-        Vector2 m = move.action.ReadValue<Vector2>();
+        // MOVIMENTO
+        Vector2 m = move ? move.action.ReadValue<Vector2>() : Vector2.zero;
         Vector3 inputDir = (transform.right * m.x + transform.forward * m.y);
         if (inputDir.sqrMagnitude > 1f) inputDir.Normalize();
 
-        // sprint desativado quando crouch
         bool sprinting = (sprint && sprint.action.IsPressed()) && !isCrouching;
-
-        float targetSpeed = isCrouching ? crouchSpeed :
-                            (sprinting ? sprintSpeed : walkSpeed);
+        float targetSpeed = isCrouching ? crouchSpeed : (sprinting ? sprintSpeed : walkSpeed);
 
         Vector3 targetHorizVel = inputDir * targetSpeed;
         float accel = cc.isGrounded ? accelGround : accelAir;
@@ -156,47 +236,49 @@ public class FP_Controller_IS : MonoBehaviour
         velocity.x = horiz.x;
         velocity.z = horiz.z;
 
-        // -------- Atualizar parâmetros do Animator --------
-        // "Speed"
         float speedPercent = new Vector3(velocity.x, 0f, velocity.z).magnitude / sprintSpeed;
         if (speedPercent < 0.05f) speedPercent = 0f;
         speedPercent = Mathf.Clamp01(speedPercent);
+        if (animator)
+        {
+            animator.SetFloat("Speed", speedPercent, 0.1f, Time.deltaTime);
+            animator.SetBool("isCrouching", isCrouching);
+        }
 
-        animator.SetFloat("Speed", speedPercent, 0.1f, Time.deltaTime);
-        animator.SetBool("isCrouching", isCrouching);
-
-        // -------- Salto --------
-        if (canJump && jump.action.WasPressedThisFrame() && !isCrouching)
+        if (canJump && jump != null && jump.action.WasPressedThisFrame() && !isCrouching)
         {
             velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
             canJump = false;
         }
 
-        // -------- Gravidade --------
         velocity.y += gravity * Time.deltaTime;
         if (velocity.y < maxFallSpeed) velocity.y = maxFallSpeed;
 
         Vector3 motion = velocity * Time.deltaTime;
         CollisionFlags flags = cc.Move(motion);
-        bool groundedNow = (flags & CollisionFlags.Below) != 0;
 
+        bool groundedNow = (flags & CollisionFlags.Below) != 0;
         if (groundedNow)
         {
             if (velocity.y < 0f) velocity.y = -2f;
             if (!groundedPrev) canJump = true;
         }
-
         groundedPrev = groundedNow;
     }
-    
-    /*
-    bool CabeçaBateNoTeto()
+
+    // --- recebe do servidor a posição do spawn e aplica localmente (apenas no dono) ---
+    [ClientRpc]
+    public void SetSpawnClientRpc(Vector3 pos, Quaternion rot, ClientRpcParams rpcParams = default)
     {
-        Vector3 worldCenter = transform.TransformPoint(cc.center);
-        float radius = cc.radius * 0.95f;
-        Vector3 bottom = worldCenter + Vector3.up * (-cc.height * 0.5f + radius);
-        Vector3 topIfStand = worldCenter + Vector3.up * (originalHeight * 0.5f - radius);
-        return Physics.CheckCapsule(bottom, topIfStand, radius, ~0, QueryTriggerInteraction.Ignore);
+        if (!IsOwner) return;
+
+        if (cc == null) cc = GetComponent<CharacterController>();
+        bool prev = cc && cc.enabled;
+        if (cc) cc.enabled = false;
+
+        transform.SetPositionAndRotation(pos, rot);
+        velocity = Vector3.zero;
+
+        if (cc) cc.enabled = prev;
     }
-    */
 }

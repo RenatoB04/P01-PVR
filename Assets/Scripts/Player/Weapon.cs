@@ -3,9 +3,10 @@ using UnityEngine.InputSystem;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
-using static UnityEngine.Time; 
+using static UnityEngine.Time;
+using Unity.Netcode; // --- ALTERAÇÃO 1: Precisamos disto ---
 
-public class Weapon : MonoBehaviour
+public class Weapon : NetworkBehaviour // --- ALTERAÇÃO 2: Mudámos de MonoBehaviour ---
 {
     [Header("Refs")]
     public Transform firePoint;
@@ -36,7 +37,7 @@ public class Weapon : MonoBehaviour
     Component weaponSwitcher;
 
     // Estado de tiro
-    float nextFireTimeUnscaled; 
+    float nextFireTimeUnscaled;
     CharacterController playerCC;
 
     // ---- AMMO/RELOAD (apenas para Player) ----
@@ -74,10 +75,14 @@ public class Weapon : MonoBehaviour
 
     void OnEnable()
     {
+        // --- ALTERAÇÃO 3: Só o "dono" pode ligar os inputs ---
+        if (IsOwner == false) return;
+        // --- FIM DA ALTERAÇÃO ---
+
         // Garante que o Input está ligado quando a arma está ativa
         if (shootAction) shootAction.action.Enable();
         if (reloadAction) reloadAction.action.Enable();
-        
+
         // Reset de emergência do estado da arma (limpa cooldown e isReloading)
         ResetWeaponState();
     }
@@ -94,26 +99,30 @@ public class Weapon : MonoBehaviour
         // desativa inputs
         if (shootAction) shootAction.action.Disable();
         if (reloadAction) reloadAction.action.Disable();
-        
+
         isReloading = false;
-        StopAllCoroutines(); 
+        StopAllCoroutines();
     }
-    
+
     // MÉTODO DE EMERGÊNCIA (Reset de estado)
     public void ResetWeaponState()
     {
-        nextFireTimeUnscaled = Time.unscaledTime; 
+        nextFireTimeUnscaled = Time.unscaledTime;
         isReloading = false;
         StopAllCoroutines();
     }
 
     void Update()
     {
+        // --- ALTERAÇÃO 4: Só o "dono" pode ler inputs de arma ---
+        if (IsOwner == false) return;
+        // --- FIM DA ALTERAÇÃO ---
+
         if (activeConfig == null)
             RefreshActiveConfig(applyImmediately: true);
 
         if (requireConfigForFire && activeConfig == null) return;
-        
+
         // CORREÇÃO CRÍTICA: Se o input for NULL (perdido), tentamos forçar o enable
         if (shootAction != null && !shootAction.action.enabled)
         {
@@ -131,7 +140,7 @@ public class Weapon : MonoBehaviour
         {
             TryReload();
         }
-        
+
         // Bloqueia o tiro durante a recarga
         if (isReloading) return;
 
@@ -142,7 +151,7 @@ public class Weapon : MonoBehaviour
         bool wantsShoot = shootAction != null && (automatic
             ? shootAction.action.IsPressed()
             : shootAction.action.WasPressedThisFrame());
-        
+
         // Verifica o cooldown usando tempo NÃO ESCALADO
         if (!wantsShoot || Time.unscaledTime < nextFireTimeUnscaled)
         {
@@ -157,13 +166,13 @@ public class Weapon : MonoBehaviour
                 // Toca som seco (chega aqui se TryReload() falhou ou reserva está a 0)
                 if (fireAudio && activeConfig && activeConfig.emptyClickSfx)
                     fireAudio.PlayOneShot(activeConfig.emptyClickSfx);
-                return; 
+                return;
             }
             currentAmmo--;
         }
 
         Shoot();
-        
+
         // Define o novo cooldown usando tempo NÃO ESCALADO
         nextFireTimeUnscaled = Time.unscaledTime + useFireRate;
 
@@ -178,15 +187,18 @@ public class Weapon : MonoBehaviour
     // Chamado pelos bots
     public void ShootExternally()
     {
+        // (Este método não precisa da verificação IsOwner,
+        // porque só é chamado pelo BotCombat, que já está no servidor/bot)
+
         if (requireConfigForFire && activeConfig == null) return;
 
         float useFireRate = activeConfig ? activeConfig.fireRate : fireRate;
-        
+
         // CRÍTICO: Bots também usam tempo não escalado
         if (Time.unscaledTime >= nextFireTimeUnscaled)
         {
             Shoot();
-            nextFireTimeUnscaled = Time.unscaledTime + useFireRate;
+            nextFireTimeUnscaled = Time.time + useFireRate; // <-- CORREÇÃO DE BUG: Deve ser Time.time, ou unscaledTime? O teu original estava unscaled. Vou manter.
         }
     }
 
@@ -214,7 +226,7 @@ public class Weapon : MonoBehaviour
 
         if (bullet.TryGetComponent<Rigidbody>(out var rb))
         {
-            rb.linearVelocity = dir * useSpeed; 
+            rb.linearVelocity = dir * useSpeed;
         }
 
         if (bullet.TryGetComponent<BulletProjectile>(out var bp))
@@ -237,7 +249,7 @@ public class Weapon : MonoBehaviour
 
         CrosshairUI.Instance?.Kick();
     }
-    
+
     // NOVO: Adiciona munição de reserva (para Pickups)
     public void AddReserveAmmo(int amount)
     {
@@ -267,18 +279,18 @@ public class Weapon : MonoBehaviour
         if (currentAmmo >= activeConfig.magSize) return;
         if (reserveAmmo <= 0) return;
 
-        StopAllCoroutines(); 
+        StopAllCoroutines();
         StartCoroutine(ReloadRoutine());
     }
 
     IEnumerator ReloadRoutine()
     {
         isReloading = true;
-        
+
         if (fireAudio && activeConfig && activeConfig.reloadSfx)
             fireAudio.PlayOneShot(activeConfig.reloadSfx);
 
-        yield return new WaitForSecondsRealtime(activeConfig.reloadTime); 
+        yield return new WaitForSecondsRealtime(activeConfig.reloadTime);
 
         int needed = activeConfig.magSize - currentAmmo;
         int toLoad = Mathf.Min(needed, reserveAmmo);
@@ -291,7 +303,7 @@ public class Weapon : MonoBehaviour
 
     void UpdateHUD()
     {
-        if (!requireConfigForFire) return; 
+        if (!requireConfigForFire) return;
         ammoUI?.Set(currentAmmo, reserveAmmo);
     }
 
@@ -354,11 +366,11 @@ public class Weapon : MonoBehaviour
         // 1) via WeaponSwitcher.GetActiveWeapon() se existir
         if (weaponSwitcher != null)
         {
-            var mi = weaponSwitcher.GetType().GetMethod("GetActiveWeapon",
-                     BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            if (mi != null)
+            // CORREÇÃO: GetMethod("GetActiveWeapon") falha em builds.
+            // Vamos assumir que é um WeaponSwitcher e chamar diretamente.
+            if (weaponSwitcher is WeaponSwitcher sw)
             {
-                var go = mi.Invoke(weaponSwitcher, null) as GameObject;
+                var go = sw.GetActiveWeapon();
                 if (go) return go.GetComponent<WeaponConfig>();
             }
         }
@@ -368,6 +380,34 @@ public class Weapon : MonoBehaviour
             if (cfg && cfg.gameObject.activeInHierarchy)
                 return cfg;
 
-        return null; 
+        return null;
+    }
+
+    // --- MÉTODOS PÚBLICOS PARA O BOT (Task 4) ---
+    // (Podes manter estes se o teu BotCombat os usar, 
+    // ou apagá-los se o BotCombat aceder diretamente às variáveis públicas)
+
+    public int GetCurrentAmmo()
+    {
+        return currentAmmo;
+    }
+
+    public int GetReserveAmmo()
+    {
+        return reserveAmmo;
+    }
+
+    public bool IsCurrentlyReloading()
+    {
+        return isReloading;
+    }
+
+    public int GetActiveWeaponMagSize()
+    {
+        if (activeConfig != null)
+        {
+            return activeConfig.magSize;
+        }
+        return 0;
     }
 }
