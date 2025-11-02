@@ -1,10 +1,20 @@
 using System;
 using System.Text;
+using System.Threading.Tasks;
+using ExitGames.Client.Photon;
 using Photon.Pun;
 using Photon.Realtime;
-using UnityEngine;
-using UnityEngine.UI;
 using TMPro;
+using Unity.Netcode;
+using Unity.Netcode.Transports.UTP;
+using Unity.Networking.Transport.Relay;
+using Unity.Services.Authentication;
+using Unity.Services.Core;
+using Unity.Services.Relay;
+using Unity.Services.Relay.Models;
+using UnityEngine;
+using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 
 public class LobbyManager : MonoBehaviourPunCallbacks
 {
@@ -21,12 +31,14 @@ public class LobbyManager : MonoBehaviourPunCallbacks
     [Header("Config")]
     [SerializeField] string gameSceneName = "GameScene";
     [SerializeField] int    roomCodeLength = 6;
+    [SerializeField] int    maxPlayers = 2;
 
-    const byte MAX_PLAYERS = 2;
+    const string ROOM_PROP_RELAY = "relay"; // joinCode do Unity Relay
 
     void Awake()
     {
-        PhotonNetwork.AutomaticallySyncScene = true;
+        // NO HÍBRIDO: não deixes o Photon mexer na cena
+        PhotonNetwork.AutomaticallySyncScene = false;
         Application.runInBackground = true;
 
         SetUIConnected(false);
@@ -71,19 +83,30 @@ public class LobbyManager : MonoBehaviourPunCallbacks
 
     void Log(string msg) { if (txtStatus) txtStatus.text = msg; Debug.Log("[Lobby] " + msg); }
 
-    void OnClickConnect()
+    async void OnClickConnect()
     {
         var nick = string.IsNullOrWhiteSpace(ifPlayerName?.text) ? ("Player" + UnityEngine.Random.Range(1000, 9999)) : ifPlayerName.text.Trim();
         PhotonNetwork.NickName = nick;
         Log($"A ligar ao Photon como {PhotonNetwork.NickName}...");
+
         if (!PhotonNetwork.IsConnected) PhotonNetwork.ConnectUsingSettings();
         else { Log("Já estás ligado."); SetUIConnected(true); }
+
+        // Prepara Unity Services (Relay/Authentication) cedo
+        await EnsureUnityServicesAsync();
     }
 
     void OnClickCreate()
     {
         string code = GenerateRoomCode(roomCodeLength);
-        var options = new RoomOptions { MaxPlayers = MAX_PLAYERS, IsVisible = false, IsOpen = true };
+        var options = new RoomOptions
+        {
+            MaxPlayers = (byte)Mathf.Clamp(maxPlayers, 2, 16),
+            IsVisible = false,
+            IsOpen = true,
+            CustomRoomProperties = new Hashtable { { ROOM_PROP_RELAY, "" } },
+            CustomRoomPropertiesForLobby = new[] { ROOM_PROP_RELAY }
+        };
         Log($"A criar lobby com código {code}...");
         PhotonNetwork.CreateRoom(code, options, TypedLobby.Default);
     }
@@ -100,6 +123,8 @@ public class LobbyManager : MonoBehaviourPunCallbacks
     {
         if (PhotonNetwork.InRoom) { Log("A sair do lobby..."); PhotonNetwork.LeaveRoom(); }
     }
+
+    // ---------------- Photon Callbacks ----------------
 
     public override void OnConnectedToMaster()
     {
@@ -125,7 +150,7 @@ public class LobbyManager : MonoBehaviourPunCallbacks
         Log($"Lobby criado. Código: {PhotonNetwork.CurrentRoom?.Name}");
     }
 
-    public override void OnJoinedRoom()
+    public override async void OnJoinedRoom()
     {
         string code = PhotonNetwork.CurrentRoom.Name;
         Log($"Entraste no lobby ({code}). À espera de jogadores ({PhotonNetwork.CurrentRoom.PlayerCount}/{PhotonNetwork.CurrentRoom.MaxPlayers})");
@@ -135,14 +160,23 @@ public class LobbyManager : MonoBehaviourPunCallbacks
             txtCreatedCode.text = $"Código: {code}";
         }
         SetUILobbyActions(true);
-        TryStartWhenReady();
+
+        // Se fores o Master e a sala estiver cheia, arranca já.
+        await TryStartWhenReadyAsync();
     }
 
     public override void OnCreateRoomFailed(short returnCode, string message)
     {
         Log($"Falhou criar lobby: {message}. A tentar outro código...");
         string newCode = GenerateRoomCode(roomCodeLength);
-        var options = new RoomOptions { MaxPlayers = MAX_PLAYERS, IsVisible = false, IsOpen = true };
+        var options = new RoomOptions
+        {
+            MaxPlayers = (byte)Mathf.Clamp(maxPlayers, 2, 16),
+            IsVisible = false,
+            IsOpen = true,
+            CustomRoomProperties = new Hashtable { { ROOM_PROP_RELAY, "" } },
+            CustomRoomPropertiesForLobby = new[] { ROOM_PROP_RELAY }
+        };
         PhotonNetwork.CreateRoom(newCode, options, TypedLobby.Default);
     }
 
@@ -151,10 +185,10 @@ public class LobbyManager : MonoBehaviourPunCallbacks
         Log($"Falhou entrar: {message}. Confirma o código.");
     }
 
-    public override void OnPlayerEnteredRoom(Player newPlayer)
+    public override async void OnPlayerEnteredRoom(Player newPlayer)
     {
         Log($"Entrou: {newPlayer.NickName} ({PhotonNetwork.CurrentRoom.PlayerCount}/{PhotonNetwork.CurrentRoom.MaxPlayers})");
-        TryStartWhenReady();
+        await TryStartWhenReadyAsync();
     }
 
     public override void OnPlayerLeftRoom(Player otherPlayer)
@@ -162,13 +196,98 @@ public class LobbyManager : MonoBehaviourPunCallbacks
         Log($"{otherPlayer.NickName} saiu. ({PhotonNetwork.CurrentRoom.PlayerCount}/{PhotonNetwork.CurrentRoom.MaxPlayers})");
     }
 
-    void TryStartWhenReady()
+    public override async void OnRoomPropertiesUpdate(Hashtable propertiesThatChanged)
+    {
+        // Clientes recebem o joinCode e ligam-se ao NGO
+        if (propertiesThatChanged != null && propertiesThatChanged.ContainsKey(ROOM_PROP_RELAY))
+        {
+            string joinCode = propertiesThatChanged[ROOM_PROP_RELAY] as string;
+            if (!string.IsNullOrEmpty(joinCode) && !IsNgoConnected())
+            {
+                Log($"Código Relay recebido: {joinCode}. A ligar ao jogo...");
+                await StartClientWithRelayAsync(joinCode);
+            }
+        }
+    }
+
+    // ---------------- Fluxo Híbrido ----------------
+
+    async Task TryStartWhenReadyAsync()
     {
         if (!PhotonNetwork.IsMasterClient) return;
-        if (PhotonNetwork.CurrentRoom.PlayerCount >= MAX_PLAYERS)
+
+        if (PhotonNetwork.CurrentRoom.PlayerCount >= PhotonNetwork.CurrentRoom.MaxPlayers)
         {
-            Log("Dois jogadores presentes. A iniciar partida...");
-            PhotonNetwork.LoadLevel(gameSceneName);
+            Log("Jogadores prontos. A iniciar partida (Relay + NGO)...");
+            await StartHostWithRelayAndLoadAsync();
+        }
+    }
+
+    // HOST: cria Relay, publica joinCode no Photon e arranca Host + troca de cena via NGO
+    async Task StartHostWithRelayAndLoadAsync()
+    {
+        await EnsureUnityServicesAsync();
+
+        int maxConnections = Mathf.Max(1, maxPlayers - 1);
+        Allocation alloc = await RelayService.Instance.CreateAllocationAsync(maxConnections);
+        string joinCode = await RelayService.Instance.GetJoinCodeAsync(alloc.AllocationId);
+        Log($"Relay criado. JoinCode: {joinCode}");
+
+        // Publica joinCode para os clientes apanharem
+        var props = new ExitGames.Client.Photon.Hashtable { { ROOM_PROP_RELAY, joinCode } };
+        PhotonNetwork.CurrentRoom.SetCustomProperties(props);
+
+        var transport = NetworkManager.Singleton.NetworkConfig.NetworkTransport as UnityTransport;
+        if (transport == null) { Debug.LogError("UnityTransport não encontrado no NetworkManager."); return; }
+
+        // >>> MUDANÇA AQUI: usar AllocationUtils.ToRelayServerData (SDK unificado)
+        var serverData = AllocationUtils.ToRelayServerData(alloc, "dtls"); // ou RelayProtocol.DTLS
+        transport.SetRelayServerData(serverData);
+
+        if (!NetworkManager.Singleton.IsServer && !NetworkManager.Singleton.IsClient)
+        {
+            if (!NetworkManager.Singleton.StartHost()) { Debug.LogError("Falha ao iniciar Host NGO."); return; }
+        }
+
+        NetworkManager.Singleton.SceneManager.LoadScene(gameSceneName, LoadSceneMode.Single);
+    }
+
+    async Task StartClientWithRelayAsync(string joinCode)
+    {
+        await EnsureUnityServicesAsync();
+
+        var transport = NetworkManager.Singleton.NetworkConfig.NetworkTransport as UnityTransport;
+        if (transport == null) { Debug.LogError("UnityTransport não encontrado no NetworkManager."); return; }
+
+        JoinAllocation joinAlloc = await RelayService.Instance.JoinAllocationAsync(joinCode);
+
+        // >>> PODES usar AllocationUtils também no Join (consistente com o host):
+        var serverData = AllocationUtils.ToRelayServerData(joinAlloc, "dtls"); // ou RelayProtocol.DTLS
+        transport.SetRelayServerData(serverData);
+
+        if (!NetworkManager.Singleton.IsClient && !NetworkManager.Singleton.IsServer)
+        {
+            if (!NetworkManager.Singleton.StartClient()) { Debug.LogError("Falha ao iniciar Client NGO."); return; }
+        }
+    }
+
+    bool IsNgoConnected()
+    {
+        var nm = NetworkManager.Singleton;
+        return nm && (nm.IsClient || nm.IsServer);
+    }
+
+    // ---------------- Util ----------------
+
+    async Task EnsureUnityServicesAsync()
+    {
+        if (UnityServices.State == ServicesInitializationState.Uninitialized)
+        {
+            await UnityServices.InitializeAsync();
+        }
+        if (!AuthenticationService.Instance.IsSignedIn)
+        {
+            await AuthenticationService.Instance.SignInAnonymouslyAsync();
         }
     }
 
