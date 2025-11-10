@@ -801,6 +801,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerShield
   ShowTopMostFoldoutHeaderGroup: 1
   shieldVisual: {fileID: 1376013469352163500}
+  pulseVfxPrefab: {fileID: 6608167148170694059, guid: 47db5b5625b2aa141b0b9d6add0d426f, type: 3}
   shieldMode: 0
   shieldCapacity: 100
   shieldDuration: 2

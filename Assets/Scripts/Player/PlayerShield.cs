@@ -9,6 +9,8 @@ public class PlayerShield : NetworkBehaviour
 
     [Header("Referências Visuais")]
     [SerializeField] private GameObject shieldVisual;
+    [Tooltip("Arrasta aqui o prefab 'VFX_Pulse' que criaste")]
+    [SerializeField] private GameObject pulseVfxPrefab; // <-- NOVO
 
     [Header("UI (Automático via Tag 'ShieldText')")]
     private TextMeshProUGUI shieldTextUI;
@@ -41,31 +43,13 @@ public class PlayerShield : NetworkBehaviour
     void Awake()
     {
         health = GetComponent<Health>();
-        // DEBUG: Força bruta para desligar
-        if (shieldVisual != null) 
-        {
-             Debug.Log($"[PlayerShield] Awake: A DESLIGAR visual da esfera.");
-             shieldVisual.SetActive(false);
-        }
+        if (shieldVisual != null) shieldVisual.SetActive(false);
     }
 
     public override void OnNetworkSpawn()
     {
-        if (IsServer)
-        {
-            IsShieldActive.Value = false; // Garante que começa 'false' no servidor
-        }
-
-        if (shieldVisual != null)
-        {
-             Debug.Log($"[PlayerShield] OnNetworkSpawn: A definir visual para {IsShieldActive.Value}.");
-             shieldVisual.SetActive(IsShieldActive.Value);
-        }
-
-        if (IsOwner)
-        {
-            StartCoroutine(FindShieldUI());
-        }
+        if (shieldVisual != null) shieldVisual.SetActive(IsShieldActive.Value);
+        if (IsOwner) StartCoroutine(FindShieldUI());
     }
 
     private IEnumerator FindShieldUI()
@@ -73,10 +57,7 @@ public class PlayerShield : NetworkBehaviour
         while (shieldTextUI == null)
         {
             GameObject uiObj = GameObject.FindGameObjectWithTag("ShieldText");
-            if (uiObj != null)
-            {
-                shieldTextUI = uiObj.GetComponent<TextMeshProUGUI>();
-            }
+            if (uiObj != null) shieldTextUI = uiObj.GetComponent<TextMeshProUGUI>();
             yield return new WaitForSeconds(0.5f);
         }
         shieldTextUI.text = "";
@@ -84,26 +65,19 @@ public class PlayerShield : NetworkBehaviour
 
     void Update()
     {
-        // Só atualiza se houver mudança, para não encher o log
         if (shieldVisual != null && shieldVisual.activeSelf != IsShieldActive.Value)
         {
-            Debug.Log($"[PlayerShield] Update: Mudança detetada! A definir visual para {IsShieldActive.Value}.");
             shieldVisual.SetActive(IsShieldActive.Value);
         }
 
         if (IsOwner && shieldTextUI != null)
         {
             if (IsShieldActive.Value)
-            {
-                if (shieldMode == ShieldMode.Capacity)
-                    shieldTextUI.text = $"SHIELD: {ShieldHealth.Value:0}";
-                else
-                    shieldTextUI.text = "SHIELD: ACTIVE";
-            }
+                shieldTextUI.text = (shieldMode == ShieldMode.Capacity) ? $"SHIELD: {ShieldHealth.Value:0}" : "SHIELD: ACTIVE";
+            else if (IsPulseCasting.Value) // <-- NOVO: Mostra na UI que estamos a carregar o pulso
+                shieldTextUI.text = "CHARGING PULSE...";
             else
-            {
                 shieldTextUI.text = "";
-            }
         }
     }
 
@@ -126,8 +100,6 @@ public class PlayerShield : NetworkBehaviour
         NextShieldReadyTime.Value = now + shieldCooldown;
         IsShieldActive.Value = true;
 
-        Debug.Log($"[Servidor] Escudo ATIVADO via RPC."); // DEBUG
-
         if (shieldMode == ShieldMode.Capacity) ShieldHealth.Value = shieldCapacity;
         else { ShieldHealth.Value = 0; StartCoroutine(ShieldActiveTimerServer()); }
     }
@@ -142,7 +114,6 @@ public class PlayerShield : NetworkBehaviour
     {
         IsShieldActive.Value = false;
         ShieldHealth.Value = 0;
-        Debug.Log($"[Servidor] Escudo DESATIVADO."); // DEBUG
     }
 
     public float AbsorbDamageServer(float incomingDamage)
@@ -173,7 +144,12 @@ public class PlayerShield : NetworkBehaviour
         IsPulseCasting.Value = true;
         yield return new WaitForSeconds(pulseCastTime);
         if (health == null || health.isDead.Value) { IsPulseCasting.Value = false; yield break; }
+        
         ExecutePulseServer();
+        
+        // --- NOVO: Manda o servidor avisar todos os clientes para tocarem o VFX ---
+        PlayPulseVfxClientRpc(transform.position);
+
         IsPulseCasting.Value = false;
         NextPulseReadyTime.Value = NetworkManager.LocalTime.Time + pulseCooldown;
     }
@@ -190,6 +166,17 @@ public class PlayerShield : NetworkBehaviour
             {
                 tHealth.ApplyDamageServer(pulseDamage, health.team.Value, OwnerClientId, center, true);
             }
+        }
+    }
+
+    // --- NOVO: ClientRpc para visuais ---
+    [ClientRpc]
+    private void PlayPulseVfxClientRpc(Vector3 position)
+    {
+        // Cria o efeito visual na posição onde o pulso ocorreu
+        if (pulseVfxPrefab != null)
+        {
+            Instantiate(pulseVfxPrefab, position, Quaternion.identity);
         }
     }
 }
