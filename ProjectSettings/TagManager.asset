@@ -15,6 +15,7 @@ TagManager:
   - ExplosiveBarrel
   - ShieldText
   - SpawnPoint
+  - FirstPerson
   layers:
   - Default
   - TransparentFX

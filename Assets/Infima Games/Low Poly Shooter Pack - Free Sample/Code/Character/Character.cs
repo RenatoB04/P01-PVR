@@ -195,6 +195,23 @@ namespace InfimaGames.LowPolyShooterPack
            
            // Desativa componentes visuais e input para jogadores remotos
            if (playerCamera) playerCamera.enabled = owner;
+           
+           if (playerCamera)
+           {
+              playerCamera.enabled = owner;
+
+              if (owner)
+              {
+                 // Renderiza tudo para eliminar máscaras marotas.
+                 // playerCamera.cullingMask = ~0; // Everything
+                 playerCamera.nearClipPlane = 0.03f;
+                 playerCamera.farClipPlane = 2000f;
+                 playerCamera.clearFlags = CameraClearFlags.Skybox; // ou SolidColor, como preferires
+
+                 Debug.Log($"[CameraFix] CullingMask={playerCamera.cullingMask}, Near={playerCamera.nearClipPlane}, Far={playerCamera.farClipPlane}");
+              }
+           }
+           
            if (audioListener) audioListener.enabled = owner;
            if (characterKinematicsScript) characterKinematicsScript.enabled = owner;
            
