@@ -980,7 +980,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 2250448752
+  GlobalObjectIdHash: 2824729780
   InScenePlacedSourceGlobalObjectIdHash: 0
   DeferredDespawnTick: 0
   Ownership: 1
@@ -1441,9 +1441,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerDeathAndRespawn
   ShowTopMostFoldoutHeaderGroup: 1
-  netTransform: {fileID: 0}
+  netTransform: {fileID: 19466126240071401}
   characterController: {fileID: 0}
-  health: {fileID: 0}
+  health: {fileID: -3491376277746537993}
   spawnPointA: {x: 87, y: 1.5, z: 115}
   spawnPointB: {x: 87, y: 1.5, z: 175}
   spawnUpOffset: 1.5
@@ -8102,6 +8102,10 @@ PrefabInstance:
       propertyPath: m_Layer
       value: 9
       objectReference: {fileID: 0}
+    - target: {fileID: 8174372834435582359, guid: 9482e0a2ae6a92742bbe72e00f29f763, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 8174372834435582361, guid: 9482e0a2ae6a92742bbe72e00f29f763, type: 3}
       propertyPath: m_Layer
       value: 9
@@ -8265,6 +8269,10 @@ PrefabInstance:
     - target: {fileID: 8438767940922161081, guid: 9482e0a2ae6a92742bbe72e00f29f763, type: 3}
       propertyPath: m_Layer
       value: 9
+      objectReference: {fileID: 0}
+    - target: {fileID: 8438767940922161081, guid: 9482e0a2ae6a92742bbe72e00f29f763, type: 3}
+      propertyPath: m_IsActive
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8441318469230829952, guid: 9482e0a2ae6a92742bbe72e00f29f763, type: 3}
       propertyPath: m_Layer
@@ -8622,11 +8630,46 @@ PrefabInstance:
       propertyPath: m_Layer
       value: 9
       objectReference: {fileID: 0}
-    m_RemovedComponents: []
+    m_RemovedComponents:
+    - {fileID: 8953892810968294715, guid: 9482e0a2ae6a92742bbe72e00f29f763, type: 3}
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 8174372834435582359, guid: 9482e0a2ae6a92742bbe72e00f29f763, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1135569957948604454}
   m_SourcePrefab: {fileID: 100100000, guid: 9482e0a2ae6a92742bbe72e00f29f763, type: 3}
+--- !u!1 &2496723213727302341 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 8174372834435582359, guid: 9482e0a2ae6a92742bbe72e00f29f763, type: 3}
+  m_PrefabInstance: {fileID: 6041315293858548562}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &1135569957948604454
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2496723213727302341}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c6ef3d364174c5643b2e263f5aee5d66, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::WeaponConfig
+  firePoint: {fileID: 0}
+  bulletPrefab: {fileID: 0}
+  muzzleFlashPrefab: {fileID: 0}
+  fireSfx: {fileID: 0}
+  emptyClickSfx: {fileID: 0}
+  reloadSfx: {fileID: 0}
+  displayName: Pistol
+  automatic: 0
+  bulletSpeed: 40
+  fireRate: 0.12
+  maxAimDistance: 200
+  magSize: 30
+  startingReserve: 90
+  reloadTime: 1.4
 --- !u!114 &8195332293463410009 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 2480563158121336331, guid: 9482e0a2ae6a92742bbe72e00f29f763, type: 3}
