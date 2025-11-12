@@ -39905,7 +39905,7 @@ GameObject:
   - component: {fileID: 1229436514}
   - component: {fileID: 1229436515}
   m_Layer: 0
-  m_Name: SpawnManager
+  m_Name: SpawnPointProvider
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -39937,12 +39937,13 @@ MonoBehaviour:
   m_GameObject: {fileID: 1229436513}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4b603b3525553ec42bd8c05909dad468, type: 3}
+  m_Script: {fileID: 11500000, guid: 66284e6c95006464ca658538d2339bd6, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SpawnsManager
-  points:
-  - {fileID: 287181041}
-  - {fileID: 969674679}
+  m_EditorClassIdentifier: Assembly-CSharp::SpawnPointsProvider
+  spawnA: {fileID: 287181041}
+  spawnB: {fileID: 969674679}
+  autoDiscoverByTag: 1
+  spawnPointTag: SpawnPoint
 --- !u!1001 &1233014668
 PrefabInstance:
   m_ObjectHideFlags: 0
