@@ -373,16 +373,15 @@ MonoBehaviour:
   chatVersion: 1.0
   fixedRegion: eu
   lobbyChannel: global-lobby
-  playerNameInput: {fileID: 244567282}
+  playerNameInput: {fileID: 0}
   invalidSampleName: Nome Jogador
   inputField: {fileID: 3000734}
   sendButton: {fileID: 584579205}
   scrollRect: {fileID: 1462201214}
   messagesText: {fileID: 684142780}
-  connectButton: {fileID: 1023739769}
+  connectButton: {fileID: 0}
   sendOnEnter: 1
   maxVisibleMessages: 100
-  autoConnectForTesting: 0
 --- !u!1001 &98456897
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -2208,7 +2207,7 @@ MonoBehaviour:
   NetworkConfig:
     ProtocolVersion: 0
     NetworkTransport: {fileID: 877778573}
-    PlayerPrefab: {fileID: 9115588152224453141, guid: 261bbee8789d6ab4697482152eed454c, type: 3}
+    PlayerPrefab: {fileID: 2751027687307977091, guid: fdd0975bb30c1324cb5a3ef2074e7762, type: 3}
     Prefabs:
       NetworkPrefabsLists:
       - {fileID: 11400000, guid: 4be4e79e032f5f441a6f13e73affec7c, type: 2}
@@ -3365,7 +3364,7 @@ MonoBehaviour:
   m_HandleRect: {fileID: 206605750}
   m_Direction: 2
   m_Value: 1
-  m_Size: 0.61
+  m_Size: 0.6100001
   m_NumberOfSteps: 0
   m_OnValueChanged:
     m_PersistentCalls:
