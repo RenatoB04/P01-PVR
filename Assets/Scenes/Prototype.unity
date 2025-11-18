@@ -4121,7 +4121,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::DamageIndicatorUI
   canvas: {fileID: 111670508}
   vignetteGroup: {fileID: 1799015368}
-  vignetteImage: {fileID: 0}
+  vignetteImage: {fileID: 1799015369}
   indicatorsRoot: {fileID: 1141976050}
   arrowPrefab: {fileID: 9083356108106419849, guid: afed3b3e6dd3ca9479c02b8815409f5c, type: 3}
   flashMaxAlpha: 0.35
