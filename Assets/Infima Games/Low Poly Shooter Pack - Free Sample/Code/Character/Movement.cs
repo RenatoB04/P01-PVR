@@ -11,10 +11,6 @@ namespace InfimaGames.LowPolyShooterPack
     public class Movement : MonoBehaviour // Mudança para MonoBehaviour
     {
         #region FIELDS SERIALIZED
-
-        [Header("Network Ref")] // ADIÇÃO
-        [Tooltip("Referência ao script Character (Controller de Rede).")]
-        public Character characterNetcode; // ADIÇÃO
         
         [Header("Audio Clips")]
         [Tooltip("The audio clip that is played while walking.")]
@@ -38,6 +34,14 @@ namespace InfimaGames.LowPolyShooterPack
 
         [Tooltip("Input Action do salto (por ex., bound à tecla Space).")]
         [SerializeField] private InputActionReference jumpAction;
+        
+        [Header("Network Ref")] // ADIÇÃO
+        [Tooltip("Referência ao script Character (Controller de Rede).")]
+        public Character characterNetcode; // ADIÇÃO
+
+        // === ADIÇÃO: REFERÊNCIA AO SCRIPT DE ESTADO ===
+        [Tooltip("Referência ao script que gere a morte/respawn.")]
+        [SerializeField] private PlayerDeathAndRespawn deathStateController;
 
         #endregion
 
@@ -71,6 +75,8 @@ namespace InfimaGames.LowPolyShooterPack
 
         // Controle de cooldown do salto
         private float nextJumpTime;
+        
+        private PlayerDeathAndRespawn deathState;
 
         #endregion
 
@@ -82,7 +88,11 @@ namespace InfimaGames.LowPolyShooterPack
             if (characterNetcode == null)
                 characterNetcode = GetComponent<Character>();
 
+            if (deathStateController == null)
+                deathStateController = GetComponent<PlayerDeathAndRespawn>();
+            
             playerCharacter = characterNetcode;
+            deathState = deathStateController;
 
             if (playerCharacter == null)
                 Debug.LogError("Movement: O script 'Character' (Controller de Rede) não foi encontrado.");
@@ -155,7 +165,26 @@ namespace InfimaGames.LowPolyShooterPack
             // Só o owner controla o movimento
             if (playerCharacter == null || !playerCharacter.isActiveAndEnabled || !playerCharacter.IsOwner)
                 return;
+            
+            if (!CanMove())
+            {
+                // Parar o Rigidbody imediatamente
+                if (rigidBody != null)
+                {
+                    Vector3 v = rigidBody.linearVelocity;
+                    rigidBody.linearVelocity = new Vector3(0f, v.y, 0f); // Só permite movimento vertical (queda/salto)
+                }
+                return;
+            }
 
+            if (!CanMove())
+            {
+                // Garante que o som de passos para imediatamente
+                if (audioSource != null && audioSource.isPlaying)
+                    audioSource.Pause();
+                return;
+            }
+            
             MoveCharacter();
 
             // Libertar grounded; será reposto em OnCollisionStay quando tocar no chão
@@ -205,9 +234,25 @@ namespace InfimaGames.LowPolyShooterPack
             // Aplicar velocidade de movimento só em XZ
             Velocity = new Vector3(movement.x, currentY, movement.z);
         }
+        
+        private bool CanMove()
+        {
+            // Só o owner pode mover
+            if (playerCharacter == null || !playerCharacter.isActiveAndEnabled || !playerCharacter.IsOwner)
+                return false;
+
+            // Se o script de estado existir, verifica se o jogador está controlado
+            if (deathState != null)
+                return deathState.IsPlayerControlled;
+            
+            // Fallback (se o script de estado for nulo)
+            return true;
+        }
 
         private void OnJumpPerformed(InputAction.CallbackContext ctx)
         {
+            if (!CanMove()) return;
+            
             // Só processa no owner
             if (playerCharacter == null || !playerCharacter.isActiveAndEnabled || !playerCharacter.IsOwner)
                 return;
@@ -223,6 +268,8 @@ namespace InfimaGames.LowPolyShooterPack
             if (Time.time < nextJumpTime)
                 return;
 
+            if (!CanMove()) return;
+            
             // só salta se grounded
             if (!grounded)
                 return;
@@ -248,6 +295,13 @@ namespace InfimaGames.LowPolyShooterPack
         {
             if (audioSource == null || rigidBody == null || playerCharacter == null)
                 return;
+            
+            if (!CanMove()) // === ADIÇÃO: BLOQUEAR SOM DE PASSOS SE MORTO ===
+            {
+                if (audioSource != null && audioSource.isPlaying)
+                    audioSource.Pause();
+                return;
+            }
 
             // passos só quando está no chão e com velocidade horizontal
             Vector3 horizontalVel = rigidBody.linearVelocity; horizontalVel.y = 0f;

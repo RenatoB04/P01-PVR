@@ -1,14 +1,35 @@
 using UnityEngine;
 using Unity.Netcode;
-using Unity.Netcode.Components; // necessário para NetworkTransform
+using Unity.Netcode.Components; // Necessário para NetworkTransform
 using System;
+
+// NOTA: Assumimos que existe uma classe 'Health' com uma NetworkVariable<bool> chamada 'isDead'.
+// Assumimos também que existe uma classe estática 'GameplayCursor' com métodos Lock() e Unlock().
 
 public class PlayerDeathAndRespawn : NetworkBehaviour
 {
+    // ==================================================================================
+    // === NOVAS VARIÁVEIS PARA CONTROLO DE ESTADO E UI =================================
+    // ==================================================================================
+
     [Header("Refs")]
     [SerializeField] private NetworkTransform netTransform;
     [SerializeField] private CharacterController characterController;
-    [SerializeField] private Health health;
+    [SerializeField] private Health health; // Componente Health do jogador
+
+    [Header("Componentes de Controlo e UI")]
+    [Tooltip("O GameObject que contém a UI de Morte/Respawn (Canvas).")]
+    [SerializeField] private GameObject deathCanvasUI;
+
+    /// <summary>
+    /// Propriedade pública a ser verificada por scripts como PlayerMovement ou PlayerShooting.
+    /// Se for TRUE, o jogador pode interagir (mexer/disparar). Se for FALSE (morto), deve ser ignorado.
+    /// </summary>
+    public bool IsPlayerControlled => IsOwner && health != null && !health.isDead.Value;
+
+    // ==================================================================================
+    // === REFS E LÓGICA EXISTENTE ======================================================
+    // ==================================================================================
 
     [Header("Spawn Points Fixos (Mundiais)")]
     [Tooltip("SpawnPoint A (por exemplo lado esquerdo do mapa).")]
@@ -46,14 +67,89 @@ public class PlayerDeathAndRespawn : NetworkBehaviour
         if (!netTransform)
             netTransform = GetComponentInChildren<NetworkTransform>();
 
-        // SPAWN INICIAL: servidor decide e **força** o dono a teletransportar via ClientRpc.
+        // Lógica de spawn inicial (apenas servidor)
         if (IsServer)
         {
             var spawn = ResolveSpawnForOwner(OwnerClientId);
             Debug.Log($"[Respawn] OnNetworkSpawn → Spawn inicial. Owner={OwnerClientId}, SpawnPos={spawn.pos}");
             ForceOwnerTeleportServer(spawn.pos, spawn.rot);
         }
+
+        // Cliente Owner subscreve para reagir a mortes/respawns
+        if (IsOwner && health != null)
+        {
+            // Set do estado inicial ao fazer o spawn
+            // A NetworkVariable já terá o valor correto (false, por defeito)
+            HandleControlState(health.isDead.Value, health.isDead.Value);
+
+            // Subscrição para reagir a futuras mudanças de estado
+            health.isDead.OnValueChanged += HandleControlState;
+        }
     }
+
+    public override void OnNetworkDespawn()
+    {
+        base.OnNetworkDespawn();
+
+        // Limpar subscrição ao sair da rede
+        if (IsOwner && health != null)
+        {
+            health.isDead.OnValueChanged -= HandleControlState;
+        }
+    }
+
+    // ==================================================================================
+    // === LÓGICA DE CONTROLO DE ESTADO (CLIENTE OWNER) ==================================
+    // ==================================================================================
+
+    /// <summary>
+    /// Chamado no Client Owner quando o estado de morte muda (trigger via Health.isDead NetworkVariable).
+    /// Controla a UI de Morte e o cursor.
+    /// </summary>
+    private void HandleControlState(bool previousDead, bool currentDead)
+    {
+        // Esta lógica SÓ deve ser executada pelo OWNER.
+        if (!IsOwner) return;
+
+        if (currentDead)
+        {
+            // O jogador morreu (isDead = true).
+            Debug.Log("[DeathAndRespawn] Player morreu. Desabilitar Controlo, Mostrar UI, Desbloquear Cursor.");
+            
+            // 1. Mostrar o Canvas de Morte (Permite interação)
+            if (deathCanvasUI != null)
+            {
+                deathCanvasUI.SetActive(true);
+            }
+            
+            // 2. Desbloquear o cursor do rato para permitir cliques na UI
+            GameplayCursor.Unlock(); 
+
+            // 3. Outros scripts (Movimento/Disparo) devem parar de funcionar 
+            //    automaticamente verificando a propriedade IsPlayerControlled.
+        }
+        else
+        {
+            // O jogador está vivo / renasceu (isDead = false).
+            Debug.Log("[DeathAndRespawn] Player renasceu. Habilitar Controlo, Esconder UI, Bloquear Cursor.");
+            
+            // 1. Esconder o Canvas de Morte
+            if (deathCanvasUI != null)
+            {
+                deathCanvasUI.SetActive(false);
+            }
+            
+            // 2. Bloquear o cursor para o gameplay (após esconder a UI)
+            GameplayCursor.Lock(); 
+            
+            // 3. Outros scripts voltam a funcionar automaticamente.
+        }
+    }
+
+
+    // ==================================================================================
+    // === LÓGICA DE RESPAWN (SERVER) ====================================================
+    // ==================================================================================
 
     /// <summary>
     /// RPC de respawn, usado quando o jogador morre.
@@ -79,14 +175,15 @@ public class PlayerDeathAndRespawn : NetworkBehaviour
         var spawn = ResolveSpawnForOwner(OwnerClientId);
         Debug.Log($"[Respawn] Respawn/Spawn no servidor. Owner={OwnerClientId} SpawnPos={spawn.pos}");
 
-        health.ResetFullHealth();
+        // CRUCIAL: Isto deve alterar health.isDead.Value para FALSE, 
+        // o que por sua vez despoleta o HandleControlState no Owner.
+        health.ResetFullHealth(); 
+        
         ForceOwnerTeleportServer(spawn.pos, spawn.rot);
     }
 
     /// <summary>
     /// Força o dono a teletransportar-se. 
-    /// - Se o servidor tiver autoridade sobre o NetworkTransform, também teleporta no servidor (para consistência).
-    /// - **Mas em qualquer caso** envia um ClientRpc dirigido ao dono (Owner) para garantir o movimento.
     /// </summary>
     private void ForceOwnerTeleportServer(Vector3 spawnPos, Quaternion spawnRot)
     {
@@ -100,7 +197,7 @@ public class PlayerDeathAndRespawn : NetworkBehaviour
             }
             else
             {
-                // Mesmo sem autoridade, não há problema — o passo 2 vai resolver no Owner.
+                // Mesmo sem autoridade, o RPC ao Owner irá resolver.
             }
         }
         catch (Exception ex)
@@ -108,7 +205,7 @@ public class PlayerDeathAndRespawn : NetworkBehaviour
             Debug.LogWarning($"[Respawn] Server-side Teleport falhou/sem autoridade: {ex.Message}. A prosseguir com RPC ao Owner.");
         }
 
-        // 2) **Sempre** enviar RPC dirigido ao Owner, que tem autoridade e pode aplicar a pose.
+        // 2) **Sempre** enviar RPC dirigido ao Owner.
         var target = new ClientRpcParams
         {
             Send = new ClientRpcSendParams { TargetClientIds = new[] { OwnerClientId } }
@@ -121,6 +218,7 @@ public class PlayerDeathAndRespawn : NetworkBehaviour
     {
         if (!IsOwner) return;
 
+        // Desativar temporariamente o CharacterController para evitar "jittering" no Teleport.
         bool ccWasEnabled = characterController && characterController.enabled;
         if (ccWasEnabled) characterController.enabled = false;
 
@@ -144,8 +242,8 @@ public class PlayerDeathAndRespawn : NetworkBehaviour
             transform.localScale = scale;
         }
 
-        GameplayCursor.Lock();
-
+        // O controlo do cursor (Lock/Unlock) é agora feito em HandleControlState.
+        
         if (ccWasEnabled) characterController.enabled = true;
     }
 

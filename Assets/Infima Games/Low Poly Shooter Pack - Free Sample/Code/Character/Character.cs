@@ -58,10 +58,11 @@ namespace InfimaGames.LowPolyShooterPack
        [Tooltip("Character Animator.")]
        [SerializeField]
        private Animator characterAnimator;
-
-       [Header("Audio")]
-       [Tooltip("AudioSource para sons da arma (reload, etc).")]
-       [SerializeField]
+       
+       // === ADIÇÃO: REFERÊNCIA AO SCRIPT DE ESTADO ===
+       [Header("Gestão de Estado de Morte")]
+       [Tooltip("Referência ao script que gere a morte/respawn.")]
+       [SerializeField] private PlayerDeathAndRespawn deathStateController;
        
        private AudioSource weaponAudioSource;
 
@@ -323,6 +324,8 @@ namespace InfimaGames.LowPolyShooterPack
 
           //Cache the CharacterKinematics component.
           characterKinematics = GetComponent<CharacterKinematics>();
+          
+          if (!deathStateController) deathStateController = GetComponent<PlayerDeathAndRespawn>();
 
           // LINHAS CORRIGIDAS: Comentamos para evitar o NRE do Weapon.cs no Awake()
           // inventory.Init(); 
@@ -349,6 +352,15 @@ namespace InfimaGames.LowPolyShooterPack
        {
           if (!IsOwner) return; // ADIÇÃO CRUCIAL: Bloqueia lógica de input para remotos
 
+          if (!CanProcessInput())
+          {
+             // Limpar input para evitar movimento inesperado quando renasce
+             axisMovement = Vector2.zero;
+             holdingButtonFire = false;
+             holdingButtonAim = false;
+             return; 
+          }
+          
           // Fallback: se estamos em reload mas a animação já não é de reload, libertar o flag.
           if (reloading)
           {
@@ -486,6 +498,22 @@ namespace InfimaGames.LowPolyShooterPack
           //Play firing animation.
           const string stateName = "Fire";
           characterAnimator.CrossFade(stateName, 0.05f, layerOverlay, 0);
+       }
+       
+       private bool CanProcessInput()
+       {
+          // Se não for o owner, não pode processar de todo.
+          if (!IsOwner) return false;
+
+          // O jogador SÓ deve processar input se não estiver morto.
+          if (deathStateController != null && !deathStateController.IsPlayerControlled)
+          {
+             // Exceção: permitir input de ESC para desbloquear o cursor
+             return !cursorLocked;
+          }
+
+          // Se chegou aqui, está vivo. Precisa que o cursor esteja locked para processar input de jogo.
+          return cursorLocked;
        }
 
        private void PlayReloadAnimation()
@@ -755,6 +783,8 @@ namespace InfimaGames.LowPolyShooterPack
        /// </summary>
        public void OnTryFire(InputAction.CallbackContext context)
        {
+          if (!CanProcessInput()) return;
+          
           if (!IsOwner) return; // ADIÇÃO CRUCIAL
           
           // ADIÇÃO DE PROTEÇÃO: Se a arma for nula, sair imediatamente (evita NRE)
@@ -807,6 +837,8 @@ namespace InfimaGames.LowPolyShooterPack
        {
           if (!IsOwner) return; // ADIÇÃO CRUCIAL
           
+          if (!CanProcessInput()) return;
+          
           //Block while the cursor is unlocked.
           if (!cursorLocked)
              return;
@@ -833,6 +865,8 @@ namespace InfimaGames.LowPolyShooterPack
        {
           if (!IsOwner) return; // ADIÇÃO CRUCIAL
           
+          if (!CanProcessInput()) return;
+          
           //Block while the cursor is unlocked.
           if (!cursorLocked)
              return;
@@ -858,6 +892,8 @@ namespace InfimaGames.LowPolyShooterPack
        {
           if (!IsOwner) return; // ADIÇÃO CRUCIAL
           
+          if (!CanProcessInput()) return;
+          
           //Block while the cursor is unlocked.
           if (!cursorLocked)
              return;
@@ -882,6 +918,8 @@ namespace InfimaGames.LowPolyShooterPack
        public void OnTryHolster(InputAction.CallbackContext context)
        {
           if (!IsOwner) return; // ADIÇÃO CRUCIAL
+          
+          if (!CanProcessInput()) return;
           
           //Block while the cursor is unlocked.
           if (!cursorLocked)
@@ -910,6 +948,8 @@ namespace InfimaGames.LowPolyShooterPack
        {
           if (!IsOwner) return; // ADIÇÃO CRUCIAL
           
+          if (!CanProcessInput()) return;
+          
           //Block while the cursor is unlocked.
           if (!cursorLocked)
              return;
@@ -935,6 +975,8 @@ namespace InfimaGames.LowPolyShooterPack
        public void OnTryInventoryNext(InputAction.CallbackContext context)
        {
           if (!IsOwner) return; // ADIÇÃO CRUCIAL
+          
+          if (!CanProcessInput()) return;
           
           //Block while the cursor is unlocked.
           if (!cursorLocked)
@@ -989,6 +1031,12 @@ namespace InfimaGames.LowPolyShooterPack
        {
           if (!IsOwner) return; // ADIÇÃO CRUCIAL
           
+          if (!CanProcessInput()) // === ADIÇÃO: BLOQUEIO DE ESTADO ===
+          {
+             axisMovement = Vector2.zero; // Limpar o input de movimento
+             return; 
+          }
+          
           //Read.
           axisMovement = cursorLocked ? context.ReadValue<Vector2>() : default;
        }
@@ -998,6 +1046,12 @@ namespace InfimaGames.LowPolyShooterPack
        public void OnLook(InputAction.CallbackContext context)
        {
           if (!IsOwner) return; // ADIÇÃO CRUCIAL
+          
+          if (!CanProcessInput()) // === ADIÇÃO: BLOQUEIO DE ESTADO ===
+          {
+             axisLook = Vector2.zero; // Limpar o input de olhar
+             return;
+          }
           
           //Read.
           axisLook = cursorLocked ? context.ReadValue<Vector2>() : default;
