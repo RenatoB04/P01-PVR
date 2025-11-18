@@ -993,7 +993,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1ba9a63e484e8f142b3b13cfd976e290, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  characterNetcode: {fileID: 434113066}
   audioClipWalking: {fileID: 8300000, guid: 74abbbf1b1724e34b894191db38e10a0, type: 3}
   audioClipRunning: {fileID: 8300000, guid: d2add02f58e61e640aba3ae9110591cb, type: 3}
   speedWalking: 4
@@ -1001,6 +1000,8 @@ MonoBehaviour:
   jumpVelocity: 6.5
   jumpCooldown: 0.1
   jumpAction: {fileID: -2099379676528639254, guid: 289c1b55c9541489481df5cc06664110, type: 3}
+  characterNetcode: {fileID: 434113066}
+  deathStateController: {fileID: 0}
 --- !u!114 &-5687252243577193727
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1013,7 +1014,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 2824729780
+  GlobalObjectIdHash: 2250448752
   InScenePlacedSourceGlobalObjectIdHash: 0
   DeferredDespawnTick: 0
   Ownership: 1
@@ -1057,7 +1058,7 @@ MonoBehaviour:
   dampTimeLocomotion: 0.1
   dampTimeAiming: 0.3
   characterAnimator: {fileID: 3320314160785962872}
-  weaponAudioSource: {fileID: 0}
+  deathStateController: {fileID: 0}
 --- !u!114 &8163229473432397683
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1485,8 +1486,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerDeathAndRespawn
   ShowTopMostFoldoutHeaderGroup: 1
   netTransform: {fileID: 19466126240071401}
-  characterController: {fileID: 0}
+  capsuleCollider: {fileID: 0}
   health: {fileID: -3491376277746537993}
+  rb: {fileID: 0}
+  deathCanvasUI: {fileID: 0}
+  respawnDelay: 0
   spawnPointA: {x: 87, y: 1.5, z: 115}
   spawnPointB: {x: 87, y: 1.5, z: 175}
   spawnUpOffset: 1.5
