@@ -810,6 +810,7 @@ GameObject:
   - component: {fileID: -7511104848531135329}
   - component: {fileID: 1327982029724605058}
   - component: {fileID: 3325829605012860292}
+  - component: {fileID: -1649541708463674116}
   m_Layer: 10
   m_Name: FPSPlayer
   m_TagString: Player
@@ -993,7 +994,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1ba9a63e484e8f142b3b13cfd976e290, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  characterNetcode: {fileID: 434113066}
   audioClipWalking: {fileID: 8300000, guid: 74abbbf1b1724e34b894191db38e10a0, type: 3}
   audioClipRunning: {fileID: 8300000, guid: d2add02f58e61e640aba3ae9110591cb, type: 3}
   speedWalking: 4
@@ -1001,6 +1001,8 @@ MonoBehaviour:
   jumpVelocity: 6.5
   jumpCooldown: 0.1
   jumpAction: {fileID: -2099379676528639254, guid: 289c1b55c9541489481df5cc06664110, type: 3}
+  characterNetcode: {fileID: 434113066}
+  deathStateController: {fileID: 0}
 --- !u!114 &-5687252243577193727
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1013,7 +1015,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 2824729780
+  GlobalObjectIdHash: 2250448752
   InScenePlacedSourceGlobalObjectIdHash: 0
   DeferredDespawnTick: 0
   Ownership: 1
@@ -1057,7 +1059,7 @@ MonoBehaviour:
   dampTimeLocomotion: 0.1
   dampTimeAiming: 0.3
   characterAnimator: {fileID: 3320314160785962872}
-  weaponAudioSource: {fileID: 0}
+  deathStateController: {fileID: 0}
 --- !u!114 &8163229473432397683
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1487,6 +1489,7 @@ MonoBehaviour:
   netTransform: {fileID: 19466126240071401}
   characterController: {fileID: 0}
   health: {fileID: -3491376277746537993}
+  deathCanvasUI: {fileID: 0}
   spawnPointA: {x: 87, y: 1.5, z: 115}
   spawnPointB: {x: 87, y: 1.5, z: 175}
   spawnUpOffset: 1.5
@@ -1507,7 +1510,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerShield
   ShowTopMostFoldoutHeaderGroup: 1
   shieldVisual: {fileID: 0}
-  pulseVfxPrefab: {fileID: 0}
+  pulseVfxPrefab: {fileID: 6608167148170694059, guid: 47db5b5625b2aa141b0b9d6add0d426f, type: 3}
   shieldMode: 0
   shieldCapacity: 100
   shieldDuration: 2
@@ -1571,6 +1574,30 @@ MonoBehaviour:
   weaponCamera: {fileID: 0}
   firstPersonLayerName: FirstPerson
   audioListener: {fileID: 5827704354076846068}
+--- !u!114 &-1649541708463674116
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2751027687307977091}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: efaeca0c3c0274d41a6156f57e84b16a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerScore
+  ShowTopMostFoldoutHeaderGroup: 1
+  pointsPerKill: 100
+  Kills:
+    m_InternalValue: 0
+  Score:
+    m_InternalValue: 0
+  OnScoreChanged:
+    m_PersistentCalls:
+      m_Calls: []
+  OnKillsChanged:
+    m_PersistentCalls:
+      m_Calls: []
 --- !u!1 &2906013363015915789
 GameObject:
   m_ObjectHideFlags: 0

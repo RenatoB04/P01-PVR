@@ -1,61 +1,141 @@
 using UnityEngine;
 using TMPro;
+using Unity.Netcode;
+using UnityEngine.InputSystem;
+using System.Collections;
+using System.Linq; // Necessário para ordenar a lista de scores
 
-public class RoundTimer : MonoBehaviour
+public class RoundTimer : NetworkBehaviour
 {
-    [Header("Tempo da Ronda")]
-    public float roundSeconds = 60f;
+    [Header("Configuração")]
+    public float roundDuration = 300f; 
+    public bool startOnSpawn = true;
 
-    [Header("UI")]
-    [SerializeField] TMP_Text timerText;       // arrasta o texto do timer (TMP)
+    [Header("UI Timer")]
+    [SerializeField] private TMP_Text timerText;
 
-    float timeLeft;
-    bool running;
+    private NetworkVariable<float> timeRemaining = new NetworkVariable<float>(
+        300f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
-    void Start()
+    private NetworkVariable<bool> isRoundActive = new NetworkVariable<bool>(
+        false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+    public override void OnNetworkSpawn()
     {
-        StartRound();
+        timeRemaining.OnValueChanged += OnTimeChanged;
+        if (IsServer && startOnSpawn) StartRound();
+    }
+
+    public override void OnNetworkDespawn()
+    {
+        timeRemaining.OnValueChanged -= OnTimeChanged;
     }
 
     void Update()
     {
-        if (!running) return;
-
-        // CRÍTICO: Usar Time.unscaledDeltaTime para ignorar Time.timeScale
-        timeLeft -= Time.unscaledDeltaTime; 
-        if (timeLeft < 0f) timeLeft = 0f;
-
-        UpdateTimerUI(timeLeft);
-
-        if (timeLeft <= 0f)
-            EndRound();
+        if (IsServer && isRoundActive.Value)
+        {
+            float newVal = timeRemaining.Value - Time.deltaTime;
+            if (newVal <= 0f)
+            {
+                newVal = 0f;
+                EndRound();
+            }
+            timeRemaining.Value = newVal;
+        }
     }
 
     public void StartRound()
     {
-        // CORREÇÃO: Remove Time.timeScale = 1f;
-        running = true;
-        timeLeft = roundSeconds;
-        UpdateTimerUI(timeLeft);
-
-
-        // Opcional: limpar score no início
-        if (ScoreManager.Instance) ScoreManager.Instance.ResetScore();
+        if (!IsServer) return;
+        timeRemaining.Value = roundDuration;
+        isRoundActive.Value = true;
     }
 
-    public void EndRound()
+public void EndRound()
     {
-        running = false;
-        // CORREÇÃO: Remove Time.timeScale = 0f; (A PAUSA DEVE SER FEITA PELO PlayerDeathAndRespawn.cs)
+        if (!IsServer) return;
+        isRoundActive.Value = false;
+        
+        // --- DEBUG INÍCIO ---
+        Debug.Log("[RoundTimer] A calcular vencedor...");
+        PlayerScore[] allScores = FindObjectsOfType<PlayerScore>();
+        Debug.Log($"[RoundTimer] Encontrei {allScores.Length} jogadores com PlayerScore.");
 
+        string winnerName = "Ninguém";
+        int highScore = -1;
+
+        if (allScores.Length > 0)
+        {
+            // Ordena e mostra quem tem quanto
+            foreach(var p in allScores)
+            {
+                Debug.Log($" -> Player {p.OwnerClientId}: {p.Score.Value} pontos");
+            }
+
+            var bestPlayer = allScores.OrderByDescending(p => p.Score.Value).First();
+            
+            if (bestPlayer != null)
+            {
+                highScore = bestPlayer.Score.Value;
+                winnerName = $"Player {bestPlayer.OwnerClientId}";
+                Debug.Log($"[RoundTimer] Vencedor Eleito: {winnerName} com {highScore}");
+            }
+        }
+        else
+        {
+            Debug.LogWarning("[RoundTimer] ERRO: A lista de PlayerScores está vazia! Verifica o Prefab.");
+        }
+        // --- DEBUG FIM ---
+
+        // Envia os resultados
+        RoundEndedClientRpc(winnerName, highScore);
+    }
+    private void OnTimeChanged(float prev, float curr) => UpdateTimerUI(curr);
+
+    // Agora aceita argumentos com o resultado
+    [ClientRpc]
+    private void RoundEndedClientRpc(string winner, int score)
+    {
+        UpdateTimerUI(0f);
+        LockPlayerInputs();
+
+        if (GameOverUI.Instance != null)
+        {
+            GameOverUI.Instance.ShowGameOver("FIM DA RONDA", winner, score);
+        }
     }
 
-    void UpdateTimerUI(float seconds)
+    private void UpdateTimerUI(float seconds)
     {
         if (!timerText) return;
         int s = Mathf.CeilToInt(seconds);
         int mm = s / 60;
         int ss = s % 60;
         timerText.text = $"{mm:00}:{ss:00}";
+        timerText.color = seconds <= 10f ? Color.red : Color.white;
+    }
+
+    private void LockPlayerInputs()
+    {
+        if (NetworkManager.Singleton == null || NetworkManager.Singleton.LocalClient == null || NetworkManager.Singleton.LocalClient.PlayerObject == null)
+        {
+            GameplayCursor.Unlock();
+            return;
+        }
+
+        var player = NetworkManager.Singleton.LocalClient.PlayerObject;
+        
+        var inputSystem = player.GetComponent<PlayerInput>();
+        if (inputSystem != null) { inputSystem.DeactivateInput(); inputSystem.enabled = false; }
+
+        var move = player.GetComponent<FP_Controller_IS>();
+        if (move) move.enabled = false;
+
+        var weapon = player.GetComponentInChildren<Weapon>();
+        if (weapon) weapon.enabled = false;
+
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
     }
 }
