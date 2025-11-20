@@ -7,12 +7,17 @@ using TMPro;
 
 public class PlayerDeathAndRespawn : NetworkBehaviour
 {
-    [Header("Refs")]
+    [Header("Refs Físicas")]
     [SerializeField] private NetworkTransform netTransform;
     [SerializeField] private CapsuleCollider capsuleCollider;
     [SerializeField] private Health health;
-    // Adiciona referência ao Rigidbody para parar o movimento residual
     [SerializeField] private Rigidbody rb;
+
+    [Header("Refs Visuais (NOVO)")]
+    [Tooltip("O modelo 3D do corpo do boneco.")]
+    [SerializeField] private GameObject visualRoot; 
+    [Tooltip("O objeto pai das ARMAS (na câmara).")]
+    [SerializeField] private GameObject weaponRoot; 
 
     [Header("UI")]
     [SerializeField] private GameObject deathCanvasUI;
@@ -38,6 +43,7 @@ public class PlayerDeathAndRespawn : NetworkBehaviour
     [SerializeField] private bool groundSnap = true;
     [SerializeField] private float groundRaycastUp = 2f;
     [SerializeField] private float groundRaycastDown = 10f;
+    [SerializeField] private Vector3 deadZonePosition = new Vector3(0, -50, 0);
 
     private struct Pose { public Vector3 pos; public Quaternion rot; public Pose(Vector3 p, Quaternion r) { pos = p; rot = r; } }
 
@@ -46,7 +52,14 @@ public class PlayerDeathAndRespawn : NetworkBehaviour
         if (!netTransform) netTransform = GetComponentInChildren<NetworkTransform>();
         if (!capsuleCollider) capsuleCollider = GetComponentInChildren<CapsuleCollider>();
         if (!health) health = GetComponentInChildren<Health>();
-        if (!rb) rb = GetComponent<Rigidbody>(); // Tenta encontrar o RB automaticamente
+        if (!rb) rb = GetComponent<Rigidbody>(); 
+
+        // Auto-encontrar visual se falhar o arrasto
+        if (!visualRoot) 
+        {
+            var renderer = GetComponentInChildren<SkinnedMeshRenderer>();
+            if (renderer) visualRoot = renderer.gameObject;
+        }
     }
 
     public override void OnNetworkSpawn()
@@ -64,21 +77,23 @@ public class PlayerDeathAndRespawn : NetworkBehaviour
             ForceOwnerTeleportServer(spawn.pos, spawn.rot);
         }
 
+        // Inicializar estado visual e controlo
+        if (health != null)
+        {
+            // Aplica o estado inicial (se entrou já morto ou vivo)
+            HandleControlState(health.isDead.Value, health.isDead.Value);
+            // Subscreve a mudanças futuras
+            health.isDead.OnValueChanged += HandleControlState;
+        }
+
         if (IsOwner)
         {
             _uiFinderCo = StartCoroutine(FindDeathUIRefs());
-            if (health != null)
-            {
-                // Forçar reset visual
-                HandleControlState(health.isDead.Value, health.isDead.Value);
-                health.isDead.OnValueChanged += HandleControlState;
-            }
         }
     }
 
     private IEnumerator FindDeathUIRefs()
     {
-        // Procura a UI na cena (igual ao anterior)
         const int safetyFrames = 600;
         int frames = 0;
         GameObject timerTextObj = null;
@@ -105,27 +120,47 @@ public class PlayerDeathAndRespawn : NetworkBehaviour
     public override void OnNetworkDespawn()
     {
         base.OnNetworkDespawn();
-        if (IsOwner && health != null) health.isDead.OnValueChanged -= HandleControlState;
+        if (health != null) health.isDead.OnValueChanged -= HandleControlState;
         if (_respawnCoroutine != null) StopCoroutine(_respawnCoroutine);
         if (_uiFinderCo != null) StopCoroutine(_uiFinderCo);
     }
 
+    // --- LÓGICA CENTRAL DE ESTADO (VISUAL + UI + CONTROLO) ---
     private void HandleControlState(bool previousDead, bool currentDead)
     {
-        if (!IsOwner) return;
+        // 1. Lógica Visual (Para TODOS verem se o boneco existe ou não)
+        ToggleVisuals(!currentDead); // Se dead=true, visuals=false
 
-        if (currentDead)
+        // 2. Lógica Local (UI e Input só para o Dono)
+        if (IsOwner)
         {
-            if (deathCanvasUI != null) deathCanvasUI.SetActive(true);
-            if (_respawnTimerTextInstance != null) _respawnTimerTextInstance.gameObject.SetActive(false);
-            GameplayCursor.Unlock();
+            if (currentDead)
+            {
+                if (deathCanvasUI != null) deathCanvasUI.SetActive(true);
+                if (_respawnTimerTextInstance != null) _respawnTimerTextInstance.gameObject.SetActive(false);
+                GameplayCursor.Unlock();
+                
+                // Move para longe para não atrapalhar a câmara
+                // (Nota: O Collider já é desligado no ToggleVisuals)
+                //transform.position = deadZonePosition; 
+            }
+            else
+            {
+                if (deathCanvasUI != null) deathCanvasUI.SetActive(false);
+                if (_respawnTimerTextInstance != null) _respawnTimerTextInstance.gameObject.SetActive(false);
+                GameplayCursor.Lock();
+            }
         }
-        else
-        {
-            if (deathCanvasUI != null) deathCanvasUI.SetActive(false);
-            if (_respawnTimerTextInstance != null) _respawnTimerTextInstance.gameObject.SetActive(false);
-            GameplayCursor.Lock();
-        }
+    }
+
+    private void ToggleVisuals(bool isActive)
+    {
+        // Esconde/Mostra Corpo
+        if (visualRoot) visualRoot.SetActive(isActive);
+        // Esconde/Mostra Arma
+        if (weaponRoot) weaponRoot.SetActive(isActive);
+        // Liga/Desliga Colisão (para não bloquear balas enquanto morto)
+        if (capsuleCollider) capsuleCollider.enabled = isActive;
     }
 
     // --- LÓGICA DO SERVIDOR ---
@@ -152,21 +187,19 @@ public class PlayerDeathAndRespawn : NetworkBehaviour
             UpdateRespawnTimerClientRpc(timer, new ClientRpcParams { Send = new ClientRpcSendParams { TargetClientIds = new[] { clientID } } });
         }
 
-        // 1. Determinar Posição de Respawn
+        // 1. Determinar Posição
         var spawnPos = _networkSpawnPosition.Value;
-
-        // FALLBACK DE SEGURANÇA: Se a posição for (0,0,0), recalcula
         if (spawnPos == Vector3.zero)
         {
             var newSpawn = ResolveSpawnForOwner(clientID);
             spawnPos = newSpawn.pos;
-            _networkSpawnPosition.Value = spawnPos; // Atualiza para a próxima
+            _networkSpawnPosition.Value = spawnPos;
         }
 
-        // 2. TELEPORTE (A magia acontece aqui)
+        // 2. TELEPORTE
         ForceOwnerTeleportServer(spawnPos, Quaternion.identity);
 
-        // 3. Restaurar Vida
+        // 3. Restaurar Vida (Isto vai disparar o HandleControlState via OnValueChanged e reativar os visuais)
         health.ResetFullHealth();
 
         UpdateRespawnTimerClientRpc(0f, new ClientRpcParams { Send = new ClientRpcSendParams { TargetClientIds = new[] { clientID } } });
@@ -193,13 +226,10 @@ public class PlayerDeathAndRespawn : NetworkBehaviour
 
     private void ForceOwnerTeleportServer(Vector3 spawnPos, Quaternion spawnRot)
     {
-        // Teleporte no Servidor (se tiver autoridade)
         if (netTransform != null && netTransform.CanCommitToTransform)
         {
             netTransform.Teleport(spawnPos, spawnRot, transform.localScale);
         }
-
-        // Envia comando para o DONO fazer o teleporte local
         var target = new ClientRpcParams { Send = new ClientRpcSendParams { TargetClientIds = new[] { OwnerClientId } } };
         OwnerTeleportClientRpc(spawnPos, spawnRot, transform.localScale, target);
     }
@@ -208,54 +238,45 @@ public class PlayerDeathAndRespawn : NetworkBehaviour
     private void OwnerTeleportClientRpc(Vector3 pos, Quaternion rot, Vector3 scale, ClientRpcParams rpcParams = default)
     {
         if (!IsOwner) return;
-
-        // INICIA PROCESSO DE TELEPORTE AGRESSIVO
         StartCoroutine(TeleportSequence(pos, rot, scale));
     }
 
     private IEnumerator TeleportSequence(Vector3 targetPos, Quaternion targetRot, Vector3 targetScale)
     {
-        // 1. Desligar TUDO que possa causar movimento
+        // Congela Física
         if (capsuleCollider) capsuleCollider.enabled = false;
-
         if (rb)
         {
             rb.linearVelocity = Vector3.zero;
             rb.angularVelocity = Vector3.zero;
-            rb.isKinematic = true; // Congela a física completamente
+            rb.isKinematic = true; 
         }
 
-        // 2. Aplicar Teleporte
-        if (netTransform != null)
-        {
-            netTransform.Teleport(targetPos, targetRot, targetScale);
-        }
-
-        // Garante que o transform local também vai (redundância)
+        // Move
+        if (netTransform != null) netTransform.Teleport(targetPos, targetRot, targetScale);
         transform.position = targetPos;
         transform.rotation = targetRot;
 
-        // 3. Esperar que o Unity processe a nova posição (evita o rollback)
+        // Espera Frame
         yield return new WaitForEndOfFrame();
-        yield return new WaitForFixedUpdate(); // Espera extra para física
+        yield return new WaitForFixedUpdate(); 
 
-        // 4. Reativar TUDO
-        if (netTransform != null)
-        {
-            // Reforça o teleporte mais uma vez
-            netTransform.Teleport(targetPos, targetRot, targetScale);
-        }
-
+        // Reativa (SE estiver vivo, a lógica HandleControlState trata do resto, 
+        // mas aqui garantimos que o collider fica pronto para a física se o boneco estiver visível)
+        if (netTransform != null) netTransform.Teleport(targetPos, targetRot, targetScale);
+        
         if (rb)
         {
-            rb.isKinematic = false; // Descongela
-            rb.linearVelocity = Vector3.zero; // Garante que está parado
+            rb.isKinematic = false; 
+            rb.linearVelocity = Vector3.zero; 
         }
-
-        if (capsuleCollider) capsuleCollider.enabled = true;
+        
+        // Só reativa o collider se o boneco não estiver morto
+        if (health && !health.isDead.Value && capsuleCollider) 
+            capsuleCollider.enabled = true;
     }
 
-    // --- Lógica de Spawn (Inalterada) ---
+    // --- Lógica de Spawn ---
     private Pose ResolveSpawnForOwner(ulong ownerClientId)
     {
         if (spawnPointA == Vector3.zero && spawnPointB == Vector3.zero)
