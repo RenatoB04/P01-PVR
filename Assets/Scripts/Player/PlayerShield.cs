@@ -23,6 +23,10 @@ public class PlayerShield : NetworkBehaviour
     [SerializeField] private float pulseCastTime = 0.5f;
     [SerializeField] private float pulseCooldown = 15.0f;
 
+    [Header("Tempo máximo do escudo")]
+    [Tooltip("Tempo máximo (segundos) que o escudo permanece activo antes de desaparecer automaticamente.")]
+    [SerializeField] private float shieldMaxLifetime = 7f; // podes ajustar
+
     // Network Variables
     public NetworkVariable<bool> IsShieldActive = new NetworkVariable<bool>(false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
     public NetworkVariable<float> ShieldHealth = new NetworkVariable<float>(0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
@@ -31,6 +35,11 @@ public class PlayerShield : NetworkBehaviour
     public NetworkVariable<double> NextPulseReadyTime = new NetworkVariable<double>(0.0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
     private Health health;
+
+    // Referência à coroutine do tempo de vida para cancelar quando necessário
+    private Coroutine shieldLifetimeCoroutine = null;
+    // Se estiver em modo Duration, temos uma coroutine específica (opcional)
+    private Coroutine shieldDurationCoroutine = null;
 
     void Awake()
     {
@@ -111,10 +120,8 @@ public class PlayerShield : NetworkBehaviour
         
             // --- 1. STATUS DO ESCUDO ---
             if (now < NextShieldReadyTime.Value) 
-                // Removido o espaço duplo no final
                 msg += $"Escudo: {(NextShieldReadyTime.Value - now):0.0}s"; 
             else 
-                // Removido o espaço duplo no final
                 msg += "Escudo: PRONTO (Z)";
 
             // --- 2. QUEBRA DE LINHA PARA SEPARAR OS ITENS ---
@@ -141,14 +148,48 @@ public class PlayerShield : NetworkBehaviour
         IsShieldActive.Value = true;
         NextShieldReadyTime.Value = now + shieldCooldown;
         ShieldHealth.Value = (shieldMode == ShieldMode.Capacity) ? shieldCapacity : 1000f;
-        
-        if (shieldMode == ShieldMode.Duration) StartCoroutine(ShieldTimer());
+
+        // Cancela coroutines antigas (se houver) para evitar que uma activação anterior desactive a nova
+        if (shieldLifetimeCoroutine != null) { StopCoroutine(shieldLifetimeCoroutine); shieldLifetimeCoroutine = null; }
+        if (shieldDurationCoroutine != null) { StopCoroutine(shieldDurationCoroutine); shieldDurationCoroutine = null; }
+
+        // Inicia a coroutine que garante uma duração máxima do escudo (ex.: 7s)
+        shieldLifetimeCoroutine = StartCoroutine(ShieldMaxLifetimeCoroutine());
+
+        // Se estiver em modo Duration, mantém também a lógica original de duração configurável
+        if (shieldMode == ShieldMode.Duration)
+        {
+            shieldDurationCoroutine = StartCoroutine(ShieldTimer());
+        }
     }
 
     IEnumerator ShieldTimer()
     {
         yield return new WaitForSeconds(shieldDuration);
-        if (IsShieldActive.Value) { IsShieldActive.Value = false; ShieldHealth.Value = 0; }
+        // chama função de desactivação centralizada (server)
+        DeactivateShieldServer();
+        shieldDurationCoroutine = null;
+    }
+
+    IEnumerator ShieldMaxLifetimeCoroutine()
+    {
+        yield return new WaitForSeconds(shieldMaxLifetime);
+        DeactivateShieldServer();
+        shieldLifetimeCoroutine = null;
+    }
+
+    // Centraliza a desactivação do escudo no servidor
+    private void DeactivateShieldServer()
+    {
+        if (!IsServer) return;
+        if (!IsShieldActive.Value) return;
+
+        IsShieldActive.Value = false;
+        ShieldHealth.Value = 0f;
+
+        // Para quaisquer coroutines em curso relacionadas com o escudo
+        if (shieldLifetimeCoroutine != null) { StopCoroutine(shieldLifetimeCoroutine); shieldLifetimeCoroutine = null; }
+        if (shieldDurationCoroutine != null) { StopCoroutine(shieldDurationCoroutine); shieldDurationCoroutine = null; }
     }
 
     public float AbsorbDamageServer(float incoming)
@@ -158,7 +199,11 @@ public class PlayerShield : NetworkBehaviour
 
         float absorbed = Mathf.Min(ShieldHealth.Value, incoming);
         ShieldHealth.Value -= absorbed;
-        if (ShieldHealth.Value <= 0) { IsShieldActive.Value = false; ShieldHealth.Value = 0; }
+        if (ShieldHealth.Value <= 0f)
+        {
+            // Desactivar via função central para garantir limpeza correcta
+            DeactivateShieldServer();
+        }
         return incoming - absorbed;
     }
 
