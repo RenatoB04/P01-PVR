@@ -41399,7 +41399,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!114 &1253390928
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -41412,7 +41412,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: bd43f6e5323db284dacb0c75404fb2b0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BotSpawner_Proto
-  botPrefab: {fileID: 7703748112432588966, guid: 6aa5e62fbdc107d43bdb3f015efc11a9, type: 3}
+  botPrefab: {fileID: 3734673484821699758, guid: efe59f7358bde9646b10b8f6f6ae656c, type: 3}
   spawnPoints:
   - {fileID: 1709926373}
   - {fileID: 432990707}

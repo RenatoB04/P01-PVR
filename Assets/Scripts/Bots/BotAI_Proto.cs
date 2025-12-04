@@ -12,65 +12,64 @@ public class BotAI_Proto : NetworkBehaviour
         Chase,
         Attack,
         Search,
-        Retreat,   // fuga / ir buscar vida
-        GoToAmmo   // ir buscar munições
+        Retreat,
+        GoToAmmo
     }
 
     [Header("Debug")]
     [SerializeField] BotState currentState = BotState.Patrol;
     public bool debugLogs = false;
 
-    [Header("Refs")]
-    public Transform eyes;                  
-    public Animator animator;               
-    public BotCombat combat;                
+    [Header("Referências")]
+    public Transform eyes;
+    public Animator animator;
+    public BotCombat combat;
 
-    // Campos de leitura de vida (para manter compatibilidade com Health antigo se usado)
-    public MonoBehaviour healthSource;      
+    // Campos de leitura de vida (compatibilidade)
+    public MonoBehaviour healthSource;
     public string healthCurrentField = "currentHealth";
     public string healthMaxField = "maxHealth";
 
     [Header("Patrulha")]
-    public Transform[] patrolPoints;        
+    public Transform[] patrolPoints;
     public float waypointTolerance = 1.0f;
 
-    [Header("Pickups (Waypoints especiais)")]
-    public Transform[] healthPickups;       
-    public Transform[] ammoPickups;         
+    [Header("Pickups")]
+    public Transform[] healthPickups;
+    public Transform[] ammoPickups;
 
     [Header("Visão / Target")]
     public string playerTag = "Player";
-    public LayerMask obstacleMask = ~0;     
-    public float viewRadius = 60f;          
-    public float maxSearchTime = 10f;       
+    public LayerMask obstacleMask = ~0;
+    public float viewRadius = 60f;
+    public float maxSearchTime = 10f;
 
-    [Header("Combate / Distâncias")]
-    public float idealCombatDistance = 10f; 
-    public float tooCloseDistance = 4f;     
-    public float giveUpDistance = 120f;     
+    [Header("Combate")]
+    public float idealCombatDistance = 10f;
+    public float tooCloseDistance = 4f;
+    public float giveUpDistance = 120f;
 
     [Header("Prioridades")]
-    [Range(0f, 1f)] public float lowHealthThreshold = 0.2f; 
-    [Range(0f, 1f)] public float lowAmmoThreshold = 0.2f;   
+    [Range(0f, 1f)] public float lowHealthThreshold = 0.2f;
+    [Range(0f, 1f)] public float lowAmmoThreshold = 0.2f;
 
     [Header("Fuga")]
     public float retreatSpeedMultiplier = 1.5f;
 
-    [Header("Comunicação entre bots")]
+    [Header("Comunicação")]
     public static List<BotAI_Proto> allBots = new List<BotAI_Proto>();
-    public float alertRadius = 25f;         
+    public float alertRadius = 25f;
 
     // --- Interno ---
     NavMeshAgent agent;
-    Transform currentTarget; // O Jogador que estamos a perseguir
+    Transform currentTarget;
+    bool isDead = false;
 
     float baseSpeed;
     int patrolIndex = -1;
-    int patrolDirection = 1;                
+    int patrolDirection = 1;
     Vector3 lastKnownPlayerPos;
     float timeSinceLastSeen;
-
-    // Otimização para não procurar players a cada frame
     float targetSearchTimer = 0f;
 
     void OnEnable()
@@ -91,7 +90,6 @@ public class BotAI_Proto : NetworkBehaviour
         if (!animator) animator = GetComponentInChildren<Animator>();
         if (!combat) combat = GetComponent<BotCombat>();
 
-        // Tenta encontrar Health se não tiver
         if (healthSource == null)
         {
             var h = GetComponent("Health");
@@ -104,14 +102,12 @@ public class BotAI_Proto : NetworkBehaviour
 
     public override void OnNetworkSpawn()
     {
-        // A IA corre APENAS no servidor. 
-        if (!IsServer) 
+        // A IA corre apenas no servidor
+        if (!IsServer)
         {
             enabled = false;
             return;
         }
-
-        // Inicia patrulha
         ChangeState(BotState.Patrol);
     }
 
@@ -119,7 +115,19 @@ public class BotAI_Proto : NetworkBehaviour
     {
         if (!IsServer || !agent || !agent.isOnNavMesh) return;
 
-        // 1. Atualizar Alvo (Procura o player mais próximo a cada 0.5s)
+        // Verificar morte
+        var health = GetComponent<Health>();
+        if (health != null && health.isDead.Value)
+        {
+            if (!isDead)
+            {
+                isDead = true;
+                HandleDeath();
+            }
+            return;
+        }
+
+        // 1. Procurar Jogador (a cada 0.5s)
         targetSearchTimer += Time.deltaTime;
         if (targetSearchTimer > 0.5f)
         {
@@ -127,7 +135,7 @@ public class BotAI_Proto : NetworkBehaviour
             targetSearchTimer = 0f;
         }
 
-        // 2. Ler Estado
+        // 2. Decisão de Estado
         float health01 = GetHealth01();
         bool lowHealth = health01 > 0f && health01 <= lowHealthThreshold;
 
@@ -141,7 +149,7 @@ public class BotAI_Proto : NetworkBehaviour
 
         bool playerVisible = false;
         float distToPlayer = Mathf.Infinity;
-        
+
         if (currentTarget)
         {
             distToPlayer = Vector3.Distance(transform.position, currentTarget.position);
@@ -158,21 +166,17 @@ public class BotAI_Proto : NetworkBehaviour
             timeSinceLastSeen += Time.deltaTime;
         }
 
-        // --------- DECISÃO DE ESTADO (Prioridades) ----------
-        
-        // 1) Vida baixa -> Fugir
+        // Prioridades
         if (lowHealth)
         {
             if (currentState != BotState.Retreat) ChangeState(BotState.Retreat);
         }
-        // 2) Ammo baixa -> Buscar Ammo
         else if (lowAmmo && currentState != BotState.GoToAmmo)
         {
             ChangeState(BotState.GoToAmmo);
         }
         else
         {
-            // 3) Combate
             if (playerVisible && distToPlayer <= giveUpDistance)
             {
                 if (distToPlayer <= idealCombatDistance * 1.1f)
@@ -182,7 +186,7 @@ public class BotAI_Proto : NetworkBehaviour
             }
             else
             {
-                // Perdeu visão: Procura ou Volta a Patrulhar
+                // Perdeu visão
                 if (timeSinceLastSeen > 0f && timeSinceLastSeen <= maxSearchTime &&
                     (currentState == BotState.Chase || currentState == BotState.Attack))
                 {
@@ -196,7 +200,7 @@ public class BotAI_Proto : NetworkBehaviour
             }
         }
 
-        // --------- EXECUÇÃO ----------
+        // 3. Execução
         switch (currentState)
         {
             case BotState.Patrol: TickPatrol(); break;
@@ -210,7 +214,23 @@ public class BotAI_Proto : NetworkBehaviour
         UpdateAnimator();
     }
 
-    // --- Lógica Multiplayer: Encontrar Jogador Mais Próximo ---
+void HandleDeath()
+{
+    if (animator)
+    {
+        animator.SetBool("IsDead", true);
+        animator.SetFloat("Speed", 0f);
+    }
+
+    if (agent)
+    {
+        agent.isStopped = true;
+        agent.ResetPath();
+    }
+
+    if (combat) combat.SetInCombat(false);
+}
+
     void FindClosestPlayer()
     {
         GameObject[] players = GameObject.FindGameObjectsWithTag("Player");
@@ -220,7 +240,6 @@ public class BotAI_Proto : NetworkBehaviour
 
         foreach (var p in players)
         {
-            // Ignora mortos (verifica o script Health)
             var h = p.GetComponent<Health>();
             if (h != null && h.isDead.Value) continue;
 
@@ -233,15 +252,11 @@ public class BotAI_Proto : NetworkBehaviour
         }
 
         currentTarget = closest;
-        
-        // Importante: Avisar o BotCombat quem é o alvo para ele mirar
         if (combat) combat.SetTarget(currentTarget);
     }
 
-    // --------------------------------------------------------------------
-    // ESTADOS (Lógica mantida do original)
-    // --------------------------------------------------------------------
-    
+    // --- ESTADOS ---
+
     void TickPatrol()
     {
         if (patrolPoints == null || patrolPoints.Length == 0)
@@ -307,8 +322,7 @@ public class BotAI_Proto : NetworkBehaviour
         {
             agent.isStopped = true;
             agent.ResetPath();
-            
-            // Rodar para o alvo
+
             Vector3 dir = (currentTarget.position - transform.position).normalized;
             dir.y = 0;
             if (dir != Vector3.zero)
@@ -342,7 +356,7 @@ public class BotAI_Proto : NetworkBehaviour
             agent.SetDestination(transform.position + away * 8f);
         }
 
-        if (combat) combat.SetInCombat(true); // Dispara enquanto foge
+        if (combat) combat.SetInCombat(true);
     }
 
     void TickGoToAmmo()
@@ -359,10 +373,8 @@ public class BotAI_Proto : NetworkBehaviour
         if (combat) combat.SetInCombat(false);
     }
 
-    // --------------------------------------------------------------------
-    // UTILITÁRIOS E VISÃO
-    // --------------------------------------------------------------------
-    
+    // --- UTILITÁRIOS ---
+
     bool CanSeePlayer(float distToPlayer)
     {
         if (!currentTarget) return false;
@@ -372,7 +384,7 @@ public class BotAI_Proto : NetworkBehaviour
         Vector3 targetPos = currentTarget.position + Vector3.up * 1.0f;
         Vector3 dir = (targetPos - origin);
         float dist = dir.magnitude;
-        
+
         if (Physics.Raycast(origin, dir.normalized, out RaycastHit hit, dist, obstacleMask, QueryTriggerInteraction.Ignore))
         {
             if (hit.collider.transform != currentTarget && hit.collider.transform.root != currentTarget)
@@ -409,13 +421,9 @@ public class BotAI_Proto : NetworkBehaviour
 
     float GetHealth01()
     {
-        // Se tivermos o Health.cs (Netcode), usamos a NetworkVariable
         var h = GetComponent<Health>();
-        if (h != null)
-        {
-            return h.currentHealth.Value / h.maxHealth;
-        }
-        return 1f; // Fallback
+        if (h != null) return h.currentHealth.Value / h.maxHealth;
+        return 1f;
     }
 
     void ChangeState(BotState newState)
@@ -461,6 +469,6 @@ public class BotAI_Proto : NetworkBehaviour
         if (!animator || !agent) return;
         animator.SetFloat("Speed", agent.velocity.magnitude);
     }
-    
+
     public void HearSound(Vector3 pos, float loudness) { }
 }
