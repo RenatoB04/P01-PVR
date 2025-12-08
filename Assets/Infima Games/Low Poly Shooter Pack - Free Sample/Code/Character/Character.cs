@@ -63,8 +63,12 @@ namespace InfimaGames.LowPolyShooterPack
        [Header("Gestão de Estado de Morte")]
        [Tooltip("Referência ao script que gere a morte/respawn.")]
        [SerializeField] private PlayerDeathAndRespawn deathStateController;
-       
-       private AudioSource weaponAudioSource;
+
+        [Header("Animation Third Person")]
+        [Tooltip("Arrasta aqui o Animator do corpo (o que os outros veem).")]
+        [SerializeField] private Animator tpAnimator;
+
+        private AudioSource weaponAudioSource;
 
        #endregion
 
@@ -450,34 +454,40 @@ namespace InfimaGames.LowPolyShooterPack
        
        public Vector2 GetInputLook() => axisLook;
 
-       #endregion
+        #endregion
 
-       #region METHODS
+        #region METHODS
 
-       /// <summary>
-       /// Updates all the animator properties for this frame.
-       /// </summary>
-       private void UpdateAnimator()
-       {
-          //Movement Value. This value affects absolute movement. Aiming movement uses this, as opposed to per-axis movement.
-          characterAnimator.SetFloat(HashMovement, Mathf.Clamp01(Mathf.Abs(axisMovement.x) + Mathf.Abs(axisMovement.y)), dampTimeLocomotion, Time.deltaTime);
-          
-          //Update the aiming value, but use interpolation. This makes sure that things like firing can transition properly.
-          characterAnimator.SetFloat(HashAimingAlpha, Convert.ToSingle(aiming), 0.25f / 1.0f * dampTimeAiming, Time.deltaTime);
+        /// <summary>
+        /// Updates all the animator properties for this frame.
+        /// </summary>
+        private void UpdateAnimator()
+        {
+            // --- LÓGICA ORIGINAL (1ª PESSOA / BRAÇOS) ---
+            characterAnimator.SetFloat(HashMovement, Mathf.Clamp01(Mathf.Abs(axisMovement.x) + Mathf.Abs(axisMovement.y)), dampTimeLocomotion, Time.deltaTime);
+            characterAnimator.SetFloat(HashAimingAlpha, Convert.ToSingle(aiming), 0.25f / 1.0f * dampTimeAiming, Time.deltaTime);
+            characterAnimator.SetBool("Aim", aiming);
+            characterAnimator.SetBool("Running", running);
 
-          //Update Animator Aiming.
-          const string boolNameAim = "Aim";
-          characterAnimator.SetBool(boolNameAim, aiming);
-          
-          //Update Animator Running.
-          const string boolNameRun = "Running";
-          characterAnimator.SetBool(boolNameRun, running);
-       }
-       
-       /// <summary>
-       /// Plays the inspect animation.
-       /// </summary>
-       private void Inspect()
+            // --- NOVA LÓGICA (3ª PESSOA / CORPO) ---
+            if (tpAnimator != null)
+            {
+                // Movimento
+                float moveValue = Mathf.Clamp01(Mathf.Abs(axisMovement.x) + Mathf.Abs(axisMovement.y));
+                tpAnimator.SetFloat("Movement", moveValue);
+
+                // Ações
+                tpAnimator.SetBool("shoot", holdingButtonFire);
+
+                if (deathStateController != null)
+                    tpAnimator.SetBool("die", !deathStateController.IsPlayerControlled);
+            }
+        }
+
+        /// <summary>
+        /// Plays the inspect animation.
+        /// </summary>
+        private void Inspect()
        {
           //State.
           inspecting = true;

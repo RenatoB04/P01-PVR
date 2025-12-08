@@ -813,6 +813,7 @@ GameObject:
   - component: {fileID: 7217970640289793155}
   - component: {fileID: 6907939308367491131}
   - component: {fileID: -1208498794494966522}
+  - component: {fileID: 4863441718551655016}
   m_Layer: 10
   m_Name: FPSPlayer
   m_TagString: Player
@@ -1017,7 +1018,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 2250448752
+  GlobalObjectIdHash: 2824729780
   InScenePlacedSourceGlobalObjectIdHash: 0
   DeferredDespawnTick: 0
   Ownership: 1
@@ -1062,6 +1063,7 @@ MonoBehaviour:
   dampTimeAiming: 0.3
   characterAnimator: {fileID: 3320314160785962872}
   deathStateController: {fileID: 0}
+  tpAnimator: {fileID: 7665056833086956892}
 --- !u!114 &8163229473432397683
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1669,6 +1671,21 @@ MonoBehaviour:
   ShowTopMostFoldoutHeaderGroup: 1
   shieldAction: {fileID: 1590660611649017123, guid: 289c1b55c9541489481df5cc06664110, type: 3}
   pulseAction: {fileID: 8856045699606605349, guid: 289c1b55c9541489481df5cc06664110, type: 3}
+--- !u!114 &4863441718551655016
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2751027687307977091}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 278374306bfdcd84f9e6a307ff5b2ba3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::InfimaGames.LowPolyShooterPack.ClientNetworkAnimator
+  ShowTopMostFoldoutHeaderGroup: 1
+  TransitionStateInfoList: []
+  m_Animator: {fileID: 7665056833086956892}
 --- !u!1 &2906013363015915789
 GameObject:
   m_ObjectHideFlags: 0
@@ -4029,6 +4046,14 @@ PrefabInstance:
       propertyPath: m_Name
       value: BlueSoldier_Male
       objectReference: {fileID: 0}
+    - target: {fileID: 5866666021909216657, guid: 889cdc30202f091429529ff3e11d0c8e, type: 3}
+      propertyPath: m_Controller
+      value: 
+      objectReference: {fileID: 9100000, guid: f00f276882cb1bd448edb7597dc13ee2, type: 2}
+    - target: {fileID: 5866666021909216657, guid: 889cdc30202f091429529ff3e11d0c8e, type: 3}
+      propertyPath: m_ApplyRootMotion
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects:
@@ -4053,6 +4078,11 @@ GameObject:
 --- !u!4 &4377477124901699366 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 889cdc30202f091429529ff3e11d0c8e, type: 3}
+  m_PrefabInstance: {fileID: 4266409946453940429}
+  m_PrefabAsset: {fileID: 0}
+--- !u!95 &7665056833086956892 stripped
+Animator:
+  m_CorrespondingSourceObject: {fileID: 5866666021909216657, guid: 889cdc30202f091429529ff3e11d0c8e, type: 3}
   m_PrefabInstance: {fileID: 4266409946453940429}
   m_PrefabAsset: {fileID: 0}
 --- !u!1001 &6041315293858548562
