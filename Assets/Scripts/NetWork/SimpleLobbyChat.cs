@@ -6,52 +6,69 @@ using UnityEngine.UI;
 using TMPro;
 using Photon.Chat;
 using ExitGames.Client.Photon;
-using Photon.Pun; 
+using Photon.Pun;
 
+/// <summary>
+/// SimpleLobbyChat
+/// ---------------------------------------------------------------------------
+/// Implementa um chat de lobby simples usando Photon Chat.
+/// Permite enviar e receber mensagens no canal de lobby, com UI baseada em TMP.
+/// ---------------------------------------------------------------------------
+/// Funcionalidades:
+/// - Conexão a Photon Chat com AppId específico ou fallback do PhotonServerSettings.
+/// - Subscrição automática de canal de lobby.
+/// - Envios de mensagens via botão ou Enter.
+/// - Visualização das mensagens num ScrollRect com TextMeshPro.
+/// - Filtragem de mensagens do próprio jogador.
+/// ---------------------------------------------------------------------------
+/// </summary>
 public class SimpleLobbyChat : MonoBehaviour, IChatClientListener
 {
     [Header("Photon Chat")]
     [Tooltip("Se vazio, tentamos usar PhotonServerSettings.AppSettings.AppIdChat como fallback.")]
-    [SerializeField] private string appIdChat = "";
-    [SerializeField] private string chatVersion = "1.0";
-    [SerializeField] private string fixedRegion = "eu";
-    [SerializeField] private string lobbyChannel = "global-lobby";
+    [SerializeField] private string appIdChat = "";      // AppId do Photon Chat
+    [SerializeField] private string chatVersion = "1.0"; // Versão do Chat (necessário pelo Photon)
+    [SerializeField] private string fixedRegion = "eu";  // Região do servidor
+    [SerializeField] private string lobbyChannel = "global-lobby"; // Canal de chat
 
     [Header("Identidade")]
-    [SerializeField] private TMP_InputField playerNameInput;   
-    [SerializeField] private string invalidSampleName = "Nome Jogador";
+    [SerializeField] private TMP_InputField playerNameInput;  // InputField para nome do jogador
+    [SerializeField] private string invalidSampleName = "Nome Jogador"; // Nome inválido por defeito
 
     [Header("UI (mensagens)")]
-    [SerializeField] private TMP_InputField inputField;   
-    [SerializeField] private Button sendButton;           
-    [SerializeField] private ScrollRect scrollRect;       
-    [SerializeField] private TMP_Text messagesText;       
+    [SerializeField] private TMP_InputField inputField;  // InputField de mensagens
+    [SerializeField] private Button sendButton;          // Botão de envio
+    [SerializeField] private ScrollRect scrollRect;      // Scroll para mensagens
+    [SerializeField] private TMP_Text messagesText;      // Texto que mostra mensagens
 
     [Header("Controlo de fluxo")]
-    [SerializeField] private Button connectButton;        
-    [SerializeField] private bool sendOnEnter = true;     
-    [SerializeField] private int maxVisibleMessages = 100;
+    [SerializeField] private Button connectButton;      // Botão para conectar ao chat
+    [SerializeField] private bool sendOnEnter = true;   // Envia mensagem ao pressionar Enter
+    [SerializeField] private int maxVisibleMessages = 100; // Máximo de mensagens visíveis
 
     [Header("Debug / Test")]
     [Tooltip("Se true, tenta auto-conectar 1s após Start() (útil para testes no Editor).")]
     public bool autoConnectForTesting = false;
 
-    private ChatClient _chat;
-    private readonly Queue<string> _lines = new Queue<string>(128);
-    private bool isSubscribed = false;
-    private bool isConnectingOrConnected = false;
-    private string displayName = "";
+    private ChatClient _chat;                            // Cliente de chat Photon
+    private readonly Queue<string> _lines = new Queue<string>(128); // Mensagens guardadas
+    private bool isSubscribed = false;                  // Se está subscrito ao canal
+    private bool isConnectingOrConnected = false;      // Se já está conectado ou tentando
+    private string displayName = "";                    // Nome do jogador atual
 
-    
+    #region Unity Lifecycle
+
     void Awake()
     {
+        // Inicialmente desativa UI de chat
         SetChatInteractable(false);
 
+        // Adiciona listeners aos botões e input
         if (sendButton) sendButton.onClick.AddListener(OnClickSend);
         if (inputField && sendOnEnter) inputField.onSubmit.AddListener(_ => OnClickSend());
-
         if (connectButton) connectButton.onClick.AddListener(OnConnectButtonPressed);
 
+        // Tenta obter referências de UI automaticamente
         TryAutoWireUI();
     }
 
@@ -59,7 +76,7 @@ public class SimpleLobbyChat : MonoBehaviour, IChatClientListener
     {
         Application.runInBackground = true;
 
-        
+        // Se AppIdChat não estiver definido no Inspector, tenta usar fallback do PhotonServerSettings
         if (string.IsNullOrWhiteSpace(appIdChat))
         {
             var settings = PhotonNetwork.PhotonServerSettings;
@@ -70,17 +87,19 @@ public class SimpleLobbyChat : MonoBehaviour, IChatClientListener
             }
         }
 
+        // Se ainda não estiver definido, desativa o chat
         if (string.IsNullOrWhiteSpace(appIdChat))
         {
-            Debug.LogError("[SimpleLobbyChat] AppIdChat vazio. Define no componente ou em PhotonServerSettings > AppSettings > AppIdChat.");
+            Debug.LogError("[SimpleLobbyChat] AppIdChat vazio. Define no componente ou em PhotonServerSettings.");
             AppendSystem("[chat] AppIdChat vazio. Preenche AppIdChat no componente ou em PhotonServerSettings.");
             enabled = false;
             yield break;
         }
 
+        // Mensagem inicial de instruções
         AppendSystem("Define o teu nome e carrega <b>Conectar</b> para ativar o chat.");
 
-        
+        // Auto-conexão para testes
         if (autoConnectForTesting)
         {
             yield return new WaitForSeconds(1f);
@@ -91,7 +110,7 @@ public class SimpleLobbyChat : MonoBehaviour, IChatClientListener
 
     void Update()
     {
-        
+        // Necessário para o Photon Chat processar mensagens recebidas
         try
         {
             _chat?.Service();
@@ -104,13 +123,20 @@ public class SimpleLobbyChat : MonoBehaviour, IChatClientListener
 
     void OnDestroy()
     {
+        // Limpa cliente de chat e listeners
         if (_chat != null) { _chat.Disconnect(); _chat = null; }
         if (connectButton) connectButton.onClick.RemoveListener(OnConnectButtonPressed);
         if (sendButton) sendButton.onClick.RemoveListener(OnClickSend);
         if (inputField && sendOnEnter) inputField.onSubmit.RemoveAllListeners();
     }
 
-    
+    #endregion
+
+    #region Conexão / UI
+
+    /// <summary>
+    /// Tenta conectar ao chat com o nome definido
+    /// </summary>
     public void OnConnectButtonPressed()
     {
         if (isConnectingOrConnected)
@@ -132,9 +158,9 @@ public class SimpleLobbyChat : MonoBehaviour, IChatClientListener
         displayName = proposed.Trim();
         AppendSystem($"[chat] A tentar conectar como <b>{displayName}</b>...");
 
-        
         try
         {
+            // Cria ChatClient se ainda não existir
             if (_chat == null)
             {
                 _chat = new ChatClient(this);
@@ -142,6 +168,7 @@ public class SimpleLobbyChat : MonoBehaviour, IChatClientListener
                 Debug.Log("[SimpleLobbyChat] Criado ChatClient, region=" + fixedRegion);
             }
 
+            // Conecta ao Photon Chat
             bool ok = _chat.Connect(appIdChat, chatVersion, new AuthenticationValues(displayName));
             isConnectingOrConnected = true;
             Debug.Log($"[SimpleLobbyChat] Connect chamada -> returned {ok}. appIdChat length={(appIdChat?.Length ?? 0)}");
@@ -154,6 +181,9 @@ public class SimpleLobbyChat : MonoBehaviour, IChatClientListener
         }
     }
 
+    /// <summary>
+    /// Obtém nome proposto do jogador
+    /// </summary>
     string GetProposedName()
     {
         if (playerNameInput != null && !string.IsNullOrWhiteSpace(playerNameInput.text))
@@ -165,6 +195,9 @@ public class SimpleLobbyChat : MonoBehaviour, IChatClientListener
         return string.Empty;
     }
 
+    /// <summary>
+    /// Valida se o nome é adequado para chat
+    /// </summary>
     bool IsNameValid(string name)
     {
         if (string.IsNullOrWhiteSpace(name)) return false;
@@ -175,13 +208,18 @@ public class SimpleLobbyChat : MonoBehaviour, IChatClientListener
         return true;
     }
 
+    /// <summary>
+    /// Habilita ou desabilita UI de chat
+    /// </summary>
     void SetChatInteractable(bool enabledUI)
     {
         if (sendButton) sendButton.interactable = enabledUI;
         if (inputField) inputField.readOnly = !enabledUI;
     }
 
-    
+    /// <summary>
+    /// Envia mensagem pelo chat
+    /// </summary>
     public void OnClickSend()
     {
         if (inputField == null) { AppendSystem("⚠ InputField da mensagem não está atribuído."); return; }
@@ -215,6 +253,13 @@ public class SimpleLobbyChat : MonoBehaviour, IChatClientListener
         inputField.ActivateInputField();
     }
 
+    #endregion
+
+    #region Mensagens / UI
+
+    /// <summary>
+    /// Adiciona linha de mensagem no chat e atualiza ScrollRect
+    /// </summary>
     private void AppendLine(string line)
     {
         _lines.Enqueue(line);
@@ -239,8 +284,14 @@ public class SimpleLobbyChat : MonoBehaviour, IChatClientListener
         }
     }
 
+    /// <summary>
+    /// Adiciona mensagem de sistema
+    /// </summary>
     private void AppendSystem(string text) => AppendLine($"<color=#888>[system]</color> {text}");
 
+    /// <summary>
+    /// Tenta obter referências automáticas de UI se não estiverem atribuídas no Inspector
+    /// </summary>
     void TryAutoWireUI()
     {
         if (scrollRect == null) scrollRect = GetComponentInChildren<ScrollRect>(true);
@@ -248,7 +299,10 @@ public class SimpleLobbyChat : MonoBehaviour, IChatClientListener
             messagesText = scrollRect.content != null ? scrollRect.content.GetComponentInChildren<TMP_Text>(true) : null;
     }
 
-    
+    #endregion
+
+    #region Photon Chat Callbacks
+
     public void OnConnected()
     {
         Debug.Log("[SimpleLobbyChat] OnConnected()");
@@ -314,9 +368,11 @@ public class SimpleLobbyChat : MonoBehaviour, IChatClientListener
         AppendSystem($"[chat] Debug: {message}");
     }
 
-    
+    // Callbacks não utilizados
     public void OnPrivateMessage(string sender, object message, string channelName) { }
     public void OnUserSubscribed(string channel, string user) { }
     public void OnUserUnsubscribed(string channel, string user) { }
     public void OnStatusUpdate(string user, int status, bool gotMessage, object message) { }
+
+    #endregion
 }

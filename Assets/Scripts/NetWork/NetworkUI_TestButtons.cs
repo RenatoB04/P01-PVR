@@ -2,12 +2,24 @@ using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.UI;
 
+/// <summary>
+/// NetworkUI_TestButtons
+/// ---------------------------------------------------------------------------
+/// Script de teste para iniciar Host, Client ou Server manualmente via UI.
+/// Permite também spawnar o jogador quando um cliente se liga, caso ainda não tenha.
+/// ---------------------------------------------------------------------------
+/// Observações de networking:
+/// - Integra-se diretamente com o NetworkManager.Singleton.
+/// - Usa o evento OnClientConnectedCallback para spawnar jogadores no servidor.
+/// - Suporta prefabs de jogadores com NetworkObject no root.
+/// ---------------------------------------------------------------------------
+/// </summary>
 public class NetworkUI_TestButtons : MonoBehaviour
 {
     [Header("Botões")]
-    public Button hostButton;
-    public Button clientButton;
-    public Button serverButton;
+    public Button hostButton;     // Botão para iniciar Host (Server + Client)
+    public Button clientButton;   // Botão para iniciar Client
+    public Button serverButton;   // Botão para iniciar Server puro
 
     [Header("Prefab do Jogador")]
     [Tooltip("Arrasta o teu Prefab do Jogador (com NetworkObject no root).")]
@@ -15,7 +27,7 @@ public class NetworkUI_TestButtons : MonoBehaviour
 
     void Start()
     {
-        
+        // Configura listeners dos botões, garantindo que não há duplicações
         if (hostButton)
         {
             hostButton.onClick.RemoveListener(StartHost);
@@ -32,9 +44,9 @@ public class NetworkUI_TestButtons : MonoBehaviour
             serverButton.onClick.AddListener(StartServer);
         }
 
+        // Associa callback para spawn de jogadores quando um cliente se liga
         if (NetworkManager.Singleton != null)
         {
-            
             NetworkManager.Singleton.OnClientConnectedCallback -= OnClientConnected;
             NetworkManager.Singleton.OnClientConnectedCallback += OnClientConnected;
         }
@@ -44,6 +56,9 @@ public class NetworkUI_TestButtons : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Inicia o Host (Server + Client local)
+    /// </summary>
     private void StartHost()
     {
         if (NetworkManager.Singleton == null) { Debug.LogError("Sem NetworkManager."); return; }
@@ -54,6 +69,9 @@ public class NetworkUI_TestButtons : MonoBehaviour
         else Debug.LogError("Falha ao iniciar Host (porta em uso?).");
     }
 
+    /// <summary>
+    /// Inicia o Client e liga ao servidor
+    /// </summary>
     private void StartClient()
     {
         if (NetworkManager.Singleton == null) { Debug.LogError("Sem NetworkManager."); return; }
@@ -64,6 +82,9 @@ public class NetworkUI_TestButtons : MonoBehaviour
         else Debug.LogError("Falha ao iniciar Client.");
     }
 
+    /// <summary>
+    /// Inicia apenas o Server
+    /// </summary>
     private void StartServer()
     {
         if (NetworkManager.Singleton == null) { Debug.LogError("Sem NetworkManager."); return; }
@@ -74,6 +95,9 @@ public class NetworkUI_TestButtons : MonoBehaviour
         else Debug.LogError("Falha ao iniciar Server.");
     }
 
+    /// <summary>
+    /// Esconde os botões depois de iniciar Host/Client/Server
+    /// </summary>
     private void HideButtons()
     {
         if (hostButton) hostButton.gameObject.SetActive(false);
@@ -81,13 +105,15 @@ public class NetworkUI_TestButtons : MonoBehaviour
         if (serverButton) serverButton.gameObject.SetActive(false);
     }
 
-    
+    /// <summary>
+    /// Callback chamado quando um cliente se liga ao servidor
+    /// </summary>
     private void OnClientConnected(ulong clientId)
     {
         var nm = NetworkManager.Singleton;
         if (nm == null || !nm.IsServer) return;
 
-        
+        // Evita spawn duplicado se o cliente já tiver PlayerObject
         if (nm.ConnectedClients.TryGetValue(clientId, out var client) &&
             client != null && client.PlayerObject != null)
         {
@@ -95,10 +121,13 @@ public class NetworkUI_TestButtons : MonoBehaviour
             return;
         }
 
-        
+        // Spawn manual do jogador no servidor
         SpawnPlayer(clientId);
     }
 
+    /// <summary>
+    /// Instancia e spawna o prefab do jogador para o cliente especificado
+    /// </summary>
     private void SpawnPlayer(ulong clientId)
     {
         if (playerPrefabToSpawn == null)
@@ -116,11 +145,14 @@ public class NetworkUI_TestButtons : MonoBehaviour
             return;
         }
 
-        
+        // Spawn autorizado pelo servidor, associado ao clientId
         netObj.SpawnAsPlayerObject(clientId, true);
         Debug.Log($"Jogador spawnado para Client {clientId}");
     }
 
+    /// <summary>
+    /// Remove listener quando o objecto é destruído
+    /// </summary>
     void OnDestroy()
     {
         if (NetworkManager.Singleton != null)
