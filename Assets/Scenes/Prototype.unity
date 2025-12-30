@@ -41909,9 +41909,9 @@ MonoBehaviour:
   - {fileID: 1379249718}
   - {fileID: 748023029}
   - {fileID: 1371149829}
-  initialBotCount: 2
-  maxAliveBots: 5
-  respawnDelay: 5
+  initialBotCount: 1
+  maxAliveBots: 3
+  respawnDelay: 10
   enableInMultiplayer: 1
   forceSpawnInEditor: 1
 --- !u!4 &1253390929
